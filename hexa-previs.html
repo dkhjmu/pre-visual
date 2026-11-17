@@ -1,0 +1,1851 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>헥사 프리비즈</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 레이아웃: 촬영장 평면도. 한 화면 앱으로, 3D 무대가 중심이고 오른쪽에 출연·설정 패널, 아래에 타임라인.
+   육각형이 유일한 장식 어휘다(배우 칩, 키 마커, 바닥 표시). 배우 색은 촬영장 바닥 테이프 색. */
+:root{
+  --bg:#E6E9ED; --surface:#F4F5F7; --raised:#FFFFFF; --line:#C8CFD7;
+  --fg:#17212B; --muted:#56626F;
+  --accent:#2457D6; --accent-fg:#FFFFFF; --accent-soft:#DCE6FB;
+  --rec:#C92F35;
+  /* 무대 위 요소는 테마와 무관하게 같은 색(영상 위에 얹히므로) */
+  --stage:#11161C; --chip-bg:rgba(17,22,28,.80); --chip-fg:#F1F4F7; --ink-on-tape:#131A21;
+  --font-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181D; --surface:#1C2229; --raised:#252D36; --line:#37424E;
+    --fg:#E6EAEE; --muted:#98A4B0;
+    --accent:#7AA2FF; --accent-fg:#0E1622; --accent-soft:#24344F;
+    --rec:#FF6B6F;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181D; --surface:#1C2229; --raised:#252D36; --line:#37424E;
+  --fg:#E6EAEE; --muted:#98A4B0;
+  --accent:#7AA2FF; --accent-fg:#0E1622; --accent-soft:#24344F;
+  --rec:#FF6B6F;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3,p{margin:0}
+
+.app{
+  height:100%;display:grid;gap:10px;
+  grid-template-columns:minmax(0,1fr) 316px;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top" "stage panel" "tl tl";
+  padding-block:10px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* 상단 */
+.top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.hex{clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%)}
+.logo{width:27px;height:24px;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--font-mono)}
+.top-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+
+.btn{appearance:none;border:1px solid var(--line);background:var(--raised);color:var(--fg);border-radius:7px;padding:6px 11px;font-weight:500;line-height:1.2;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn:disabled{opacity:.42;cursor:default;border-color:var(--line)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.quiet:hover:not(:disabled){background:var(--surface);color:var(--fg)}
+.btn.danger{color:var(--rec)}
+.btn.wide{width:100%}
+
+/* 무대 */
+.stage{grid-area:stage;position:relative;min-height:240px;background:var(--stage);border-radius:10px;overflow:hidden}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:contain;touch-action:none}
+.view-toggle{position:absolute;left:10px;top:10px;display:inline-flex;gap:2px;padding:3px;border-radius:9px;background:var(--chip-bg)}
+.view-toggle button{appearance:none;border:0;background:none;color:var(--chip-fg);padding:5px 11px;border-radius:6px;font-weight:500;cursor:pointer}
+.view-toggle button[aria-selected="true"]{background:var(--chip-fg);color:var(--stage);font-weight:600}
+.pip{position:absolute;appearance:none;padding:0;background:none;border:2px solid var(--chip-fg);border-radius:4px;cursor:pointer;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.pip span{position:absolute;left:0;top:0;background:var(--chip-bg);color:var(--chip-fg);font:500 11px var(--font-body);padding:2px 7px;border-bottom-right-radius:4px}
+.hint{position:absolute;left:10px;bottom:10px;max-width:calc(100% - 20px);background:var(--chip-bg);color:var(--chip-fg);font-size:12px;padding:5px 9px;border-radius:7px;pointer-events:none}
+.stage.edit .hint{max-width:min(52%, 360px)}
+.stage-msg{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--chip-fg)}
+.rec-flag{position:absolute;right:10px;top:10px;display:flex;align-items:center;gap:7px;background:var(--chip-bg);color:var(--chip-fg);font:500 12px var(--font-mono);padding:5px 10px;border-radius:7px}
+.rec-flag::before{content:"";width:9px;height:9px;border-radius:50%;background:#FF4A50}
+
+/* 패널 */
+.panel{grid-area:panel;min-height:0;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.sec{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.sec:last-child{border-bottom:0}
+.sec h2{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.03em}
+.sec h3{font-size:13px;font-weight:600}
+.note{font-size:12.5px;color:var(--muted)}
+.banner{background:var(--accent-soft);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.cast{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.cast-row{width:100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:5px 8px;border:1px solid transparent;border-radius:7px;background:none;text-align:left;cursor:pointer}
+.cast-row:hover{background:var(--raised)}
+.cast-row.on{background:var(--accent-soft);border-color:var(--accent)}
+.cast-row .nm{overflow-wrap:anywhere}
+.cast-row .nm.empty{color:var(--muted)}
+.cast-row .meta{font-size:11.5px;color:var(--muted)}
+.hexchip{width:28px;height:25px;display:grid;place-items:center;background:var(--c,var(--muted));color:var(--ink-on-tape);font:600 13px var(--font-mono);clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%);flex:none}
+.camchip{width:28px;height:20px;display:grid;place-items:center;border-radius:4px;background:var(--fg);color:var(--bg);font:600 9.5px var(--font-mono);letter-spacing:.04em;flex:none}
+.boxchip{width:28px;height:22px;display:grid;place-items:center;border-radius:3px;background:var(--c,var(--muted));color:var(--ink-on-tape);font:600 12px var(--font-mono);box-shadow:inset 0 0 0 1.5px rgba(19,26,33,.5);flex:none}
+.insp-head{display:flex;align-items:center;gap:10px}
+.insp-head h3{flex:1;min-width:0;overflow-wrap:anywhere}
+.keystate{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.keystate::before{content:"";width:9px;height:9px;background:var(--line);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.keystate.has::before{background:var(--accent)}
+.field{display:grid;grid-template-columns:70px minmax(0,1fr) 46px;align-items:center;gap:8px}
+.field > label{color:var(--muted);font-size:13px}
+.field output{font:500 12px var(--font-mono);font-variant-numeric:tabular-nums;text-align:right}
+.field.two{grid-template-columns:70px minmax(0,1fr) minmax(0,1fr)}
+.field.name{grid-template-columns:70px minmax(0,1fr)}
+.xy{display:flex;align-items:center;gap:6px;min-width:0}
+.xy span{font:500 11px var(--font-mono);color:var(--muted)}
+input[type="range"]{width:100%;margin:0;accent-color:var(--accent)}
+input[type="text"],input[type="number"],select{width:100%;min-width:0;border:1px solid var(--line);background:var(--raised);border-radius:6px;padding:5px 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip-toggle{appearance:none;border:1px dashed var(--muted);background:none;border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--muted)}
+.chip-toggle:hover{color:var(--fg)}
+.chip-toggle[aria-pressed="true"]{border-style:solid;border-color:var(--accent);background:var(--accent-soft);color:var(--fg);font-weight:600}
+.limb{display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px dashed var(--line)}
+details.limb{display:block}
+details.limb > summary{font-size:13px;font-weight:600;cursor:pointer}
+details.limb[open] > summary{margin-bottom:6px}
+.limb-body{display:flex;flex-direction:column;gap:6px}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer}
+.check input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.rowbtns{display:flex;flex-wrap:wrap;gap:6px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--raised)}
+.seg button{appearance:none;border:0;border-right:1px solid var(--line);background:none;padding:5px 10px;cursor:pointer;font:500 12px var(--font-mono)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+
+/* 타임라인 */
+.timeline{grid-area:tl;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none}
+.tl-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.transport{display:flex;align-items:center;gap:4px}
+.tbtn{appearance:none;border:1px solid var(--line);background:var(--raised);border-radius:7px;height:30px;min-width:34px;padding:0 9px;cursor:pointer;display:grid;place-items:center;font-weight:500}
+.tbtn:hover{border-color:var(--muted)}
+.tbtn.play{background:var(--fg);border-color:var(--fg);color:var(--bg);min-width:64px;font-weight:600}
+.tc{font:600 19px var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.tc-unit{font:400 11px var(--font-mono);color:var(--muted)}
+.tl-spacer{flex:1}
+.dur{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.dur input{width:58px}
+.tl-scroll{overflow:auto;max-height:188px}
+.tl-grid{min-width:560px;--ph:0}
+.tl-row{display:grid;grid-template-columns:136px minmax(0,1fr);border-bottom:1px solid var(--line)}
+.tl-row:last-child{border-bottom:0}
+.tl-label{appearance:none;display:flex;align-items:center;gap:8px;min-width:0;padding:4px 10px;border:0;border-right:1px solid var(--line);background:var(--surface);text-align:left;cursor:pointer;position:sticky;left:0;z-index:2}
+.tl-label .nm{overflow-wrap:anywhere;font-size:13px;line-height:1.25}
+.tl-label .hexchip{width:23px;height:21px;font-size:11px}
+.tl-label .camchip{width:23px;height:17px;font-size:8.5px}
+.tl-row.on .tl-label{background:var(--accent-soft)}
+.tl-unit{cursor:default;color:var(--muted);font-size:11.5px}
+.tl-lanewrap{padding:0 16px;cursor:pointer;touch-action:none}
+.tl-lane{position:relative;height:30px}
+.tl-lane::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line)}
+.tl-lane::after{content:"";position:absolute;top:0;bottom:0;left:calc(var(--ph) * 100%);width:2px;margin-left:-1px;background:var(--accent);pointer-events:none;z-index:1}
+.tl-ruler .tl-lane{height:24px}
+.tl-ruler .tl-lane::before{top:auto;bottom:0}
+.tick{position:absolute;top:4px;transform:translateX(-50%);font:400 10.5px var(--font-mono);color:var(--muted);pointer-events:none}
+.ph-head{position:absolute;top:0;left:calc(var(--ph) * 100%);width:12px;height:11px;margin-left:-6px;background:var(--accent);clip-path:polygon(0 0,100% 0,100% 55%,50% 100%,0 55%);pointer-events:none;z-index:1}
+.key{position:absolute;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;background:var(--c,var(--fg));clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);cursor:grab}
+.key.now{transform:scale(1.4);z-index:1}
+
+/* 내보내기 창 */
+.modal{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(10,14,18,.58)}
+.sheet{width:min(540px,100%);max-height:100%;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.sheet h2{font-size:16px;font-weight:700}
+.sheet .field{grid-template-columns:70px minmax(0,1fr)}
+.sheet video{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;display:block}
+.sheet progress{width:100%;height:10px;accent-color:var(--accent)}
+.sheet .rowbtns{justify-content:flex-end}
+.stack{display:flex;flex-direction:column;gap:12px}
+.stack-s{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:30;max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+
+@media (max-width: 860px){
+  html,body{height:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-template-areas:"top" "stage" "tl" "panel"}
+  .stage{aspect-ratio:4/3;min-height:0;max-width:100%}
+  .panel{overflow:visible}
+  .stage.edit .hint{max-width:calc(100% - 180px)}
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="logo hex" aria-hidden="true">1</span>
+      <h1>헥사 프리비즈</h1>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="btn quiet" id="btn-undo" title="실행 취소 (Ctrl+Z)">실행 취소</button>
+      <button type="button" class="btn quiet" id="btn-redo" title="다시 실행 (Ctrl+Shift+Z)">다시 실행</button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="btn quiet" id="btn-new">새 장면</button>
+      <button type="button" class="btn quiet" id="btn-load">불러오기</button>
+      <button type="button" class="btn quiet" id="btn-save">장면 저장</button>
+      <input type="file" id="file-load" accept=".json,application/json" hidden>
+      <button type="button" class="btn primary" id="btn-export">내보내기</button>
+    </div>
+  </header>
+
+  <section class="stage edit" id="stage" aria-label="3D 무대">
+    <canvas id="view" aria-label="무대 화면"></canvas>
+    <div class="view-toggle" role="tablist" aria-label="화면 전환">
+      <button type="button" role="tab" id="tab-edit" aria-selected="true">배치 화면</button>
+      <button type="button" role="tab" id="tab-cam" aria-selected="false">카메라 화면</button>
+    </div>
+    <button type="button" class="pip" id="pip" title="카메라 화면으로 전환"><span>카메라</span></button>
+    <div class="hint" id="hint"></div>
+    <div class="rec-flag" id="rec-flag" hidden>내보내는 중</div>
+    <div class="stage-msg" id="stage-msg" hidden>이 브라우저에서 3D 화면을 열 수 없습니다. 크롬이나 엣지 최신 버전에서 다시 열어 주세요.</div>
+  </section>
+
+  <aside class="panel" id="panel" aria-label="출연과 설정">
+    <div class="banner" id="banner" hidden>
+      <span>예시 장면입니다. 1번이 걸어와 2번과 만나고, 카메라가 천천히 다가가는 8초 컷이에요. 뒤의 벽과 탁자는 배경 상자예요.</span>
+      <button type="button" class="btn" id="btn-new2">빈 장면으로 시작</button>
+    </div>
+    <div id="panel-body"></div>
+  </aside>
+
+  <section class="timeline" id="timeline" aria-label="타임라인">
+    <div class="tl-bar">
+      <div class="transport">
+        <button type="button" class="tbtn" id="btn-start" title="처음으로">처음</button>
+        <button type="button" class="tbtn play" id="btn-play" title="재생 / 멈춤 (스페이스)">재생</button>
+        <button type="button" class="tbtn" id="btn-prevkey" title="이전 키로">◀ 키</button>
+        <button type="button" class="tbtn" id="btn-nextkey" title="다음 키로">키 ▶</button>
+      </div>
+      <output class="tc" id="tc" aria-label="현재 시간">00:00:00</output>
+      <span class="tc-unit">분:초:프레임 · 24fps</span>
+      <span class="tl-spacer"></span>
+      <label class="check" for="chk-loop"><input type="checkbox" id="chk-loop" checked> 반복 재생</label>
+      <label class="dur" for="inp-dur">길이 <input type="number" id="inp-dur" min="1" max="120" step="1" value="8"> 초</label>
+    </div>
+    <div class="tl-scroll"><div class="tl-grid" id="tl-grid"></div></div>
+  </section>
+</div>
+
+<div class="modal" id="export-modal" role="dialog" aria-modal="true" aria-labelledby="ex-title" hidden>
+  <div class="sheet">
+    <h2 id="ex-title">내보내기</h2>
+    <div class="stack" id="ex-setup">
+      <p class="note">영상은 카메라 화면을 0초부터 끝까지, 이미지는 지금 시간의 한 장면을 만듭니다. 번호 표시와 색은 패널의 출력 화면 설정을, 비율은 카메라 설정을 따릅니다.</p>
+      <p class="note" id="ex-ratio"></p>
+      <div class="field">
+        <label for="ex-res">해상도</label>
+        <select id="ex-res">
+          <option value="1280x720" selected>1280 × 720</option>
+          <option value="1920x1080">1920 × 1080</option>
+          <option value="854x480">854 × 480</option>
+        </select>
+      </div>
+      <div class="rowbtns">
+        <button type="button" class="btn" id="ex-cancel">닫기</button>
+        <button type="button" class="btn" id="ex-image">지금 장면을 이미지로</button>
+        <button type="button" class="btn primary" id="ex-start">영상 내보내기</button>
+      </div>
+    </div>
+    <div class="stack" id="ex-progress" hidden>
+      <progress id="ex-bar" max="1" value="0"></progress>
+      <p class="note" id="ex-status">준비 중</p>
+      <div class="rowbtns"><button type="button" class="btn" id="ex-abort">중단</button></div>
+    </div>
+    <div class="stack" id="ex-done" hidden>
+      <video id="ex-video" controls loop muted playsinline></video>
+      <p class="note" id="ex-info"></p>
+      <div class="rowbtns">
+        <button type="button" class="btn" id="ex-close">닫기</button>
+        <button type="button" class="btn primary" id="ex-save">파일로 저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ---------- 기본 도구 ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const FPS = 24, EPS = 0.5 / FPS, D2R = Math.PI / 180;
+const TAPE = ['#E5484D', '#F2B705', '#30A46C', '#F2762E', '#D864C5', '#12A5B5', '#8E6CEF', '#A3B018'];
+const CLAY = '#9BA2AA';
+const STORE_KEY = 'hexa-previs:v1';
+const LENSES = [24, 35, 50, 85];
+// 카메라 화면 비율과 그 비율로 내보낼 수 있는 해상도 (첫 번째가 기본)
+const ASPECTS = [
+  { id: '16:9', hint: '가로 영상', r: 16 / 9, res: [[1280, 720], [1920, 1080], [854, 480]] },
+  { id: '9:16', hint: '쇼츠·릴스', r: 9 / 16, res: [[720, 1280], [1080, 1920], [480, 854]] },
+  { id: '1:1', hint: '정사각', r: 1, res: [[1080, 1080], [720, 720]] },
+  { id: '4:5', hint: '세로 피드', r: 4 / 5, res: [[1080, 1350], [720, 900]] },
+  { id: '2.39:1', hint: '시네마스코프', r: 2.39, res: [[1920, 804], [1280, 536]] },
+];
+const LIMIT = 20;              // 무대 반경 (m)
+const MAX_Y = 3;               // 배우가 뜰 수 있는 최대 높이 (m)
+const SIZE_LIM = { x: [0.3, 8], y: [0.3, 3], z: [0.3, 8] };   // 배우 크기 배율 범위 (너비·키·두께)
+const SIZE1 = () => ({ x: 1, y: 1, z: 1 });
+// 배경 상자: 장면 내내 움직이지 않는 직육면체(벽·건물·탁자 등). 위치·크기 단위는 m, 기준점은 바닥면 가운데
+const BOX_MAX = 64, BOX_LIM = 60, BOX_Y_MAX = 20;
+const BOX_SIZE_LIM = { w: [0.05, 60], h: [0.05, 40], d: [0.05, 60] };
+const TONES = [
+  { id: 'light', name: '밝게', face: '#EEF0F2', edge: '#7E8790' },
+  { id: 'mid', name: '중간', face: '#BCC2C8', edge: '#4E5761' },
+  { id: 'dark', name: '어둡게', face: '#737C86', edge: '#2B323A' },
+];
+const toneOf = id => TONES.find(t => t.id === id) || TONES[0];
+const BOX_PRESETS = [
+  { name: '벽', w: 4, h: 2.5, d: 0.2 }, { name: '문', w: 0.9, h: 2.1, d: 0.1 }, { name: '탁자', w: 1.6, h: 0.75, d: 0.8 },
+  { name: '소파', w: 2, h: 0.85, d: 0.9 }, { name: '자동차', w: 4.5, h: 1.5, d: 1.8 }, { name: '건물', w: 10, h: 8, d: 8 },
+];
+// 카메라 무빙 프리셋: 지금 시간의 구도에서 출발해 장면 끝까지 움직인다. dir: 왼쪽·오른쪽(카메라가 움직이는 쪽)을 따른다
+const CAM_MOVES = [
+  { id: 'hold', name: '고정', tip: '지금 구도로 끝까지 멈춰 있습니다' },
+  { id: 'in', name: '다가가기', tip: '돌리 인 · 보는 곳 쪽으로 거리의 절반만큼 다가갑니다' },
+  { id: 'out', name: '물러나기', tip: '돌리 아웃 · 지금 거리의 1.8배로 물러납니다' },
+  { id: 'truck', name: '옆으로 이동', dir: true, tip: '트럭 · 시선은 그대로 두고 옆으로 미끄러집니다' },
+  { id: 'pan', name: '고개 돌리기', dir: true, tip: '팬 · 제자리에서 45° 돌아봅니다' },
+  { id: 'up', name: '올라가기', tip: '크레인 업 · 보는 곳은 그대로 두고 위로 올라갑니다' },
+  { id: 'down', name: '내려오기', tip: '크레인 다운 · 보는 곳은 그대로 두고 낮게 내려옵니다' },
+  { id: 'arc', name: '90° 돌기', dir: true, tip: '아크 · 보는 곳을 중심으로 90° 돕니다' },
+  { id: 'half', name: '반 바퀴', dir: true, tip: '보는 곳을 중심으로 180° 돕니다' },
+  { id: 'full', name: '한 바퀴', dir: true, tip: '보는 곳을 중심으로 360° 돕니다' },
+];
+// 자세 값 18개: 왼팔(앞뒤, 옆, 팔꿈치) · 오른팔(앞뒤, 옆, 팔꿈치) · 왼다리(앞뒤, 무릎) · 오른다리(앞뒤, 무릎) · 머리(좌우, 숙이기)
+// · 허리(숙이기, 옆, 비틀기) · 가슴(숙이기, 옆, 비틀기) · 팔 비틀기(왼, 오른) · 손목(왼, 오른) · 다리 옆으로(왼, 오른)
+// · 다리 비틀기(왼, 오른) · 발목(왼, 오른) · 고개 기울이기
+const POSE = [
+  { label: '앞뒤', min: -60, max: 180 }, { label: '옆으로', min: 0, max: 170 }, { label: '팔꿈치', min: 0, max: 150 },
+  { label: '앞뒤', min: -60, max: 180 }, { label: '옆으로', min: 0, max: 170 }, { label: '팔꿈치', min: 0, max: 150 },
+  { label: '앞뒤', min: -45, max: 110 }, { label: '무릎', min: 0, max: 150 },
+  { label: '앞뒤', min: -45, max: 110 }, { label: '무릎', min: 0, max: 150 },
+  { label: '좌우', min: -80, max: 80 }, { label: '숙이기', min: -40, max: 50 },
+  { label: '숙이기', min: -30, max: 90 }, { label: '옆으로', min: -40, max: 40 }, { label: '비틀기', min: -60, max: 60 },
+  { label: '숙이기', min: -30, max: 60 }, { label: '옆으로', min: -35, max: 35 }, { label: '비틀기', min: -50, max: 50 },
+  { label: '비틀기', min: -90, max: 90 }, { label: '비틀기', min: -90, max: 90 },
+  { label: '손목', min: -70, max: 70 }, { label: '손목', min: -70, max: 70 },
+  { label: '옆으로', min: -25, max: 80 }, { label: '옆으로', min: -25, max: 80 },
+  { label: '비틀기', min: -45, max: 70 }, { label: '비틀기', min: -45, max: 70 },
+  { label: '발목', min: -45, max: 45 }, { label: '발목', min: -45, max: 45 },
+  { label: '기울이기', min: -35, max: 35 },
+];
+const REST = () => POSE.map(() => 0);
+const JOINT = { la: [0, 1, 2], ra: [3, 4, 5], ll: [6, 7], rl: [8, 9], waist: [12, 13, 14], chest: [15, 16, 17] };
+const LIMB_NAME = { head: '머리', spine: '몸통', la: '왼팔', ra: '오른팔', legs: '다리' };
+// 동작 프리셋. f: 시작부터의 프레임(24fps), 값이 없는 관절은 원래 자세를 따른다.
+// arm: 쓰는 팔 하나(오른팔 우선) · arms: 양팔 · legs: 양다리 · rleg: 오른다리 · waist/chest: 몸통 관절 · y: 발 높이(m) · dturn/dnod: 머리(원래 값에 더함)
+// hold: 동작이 끝난 뒤에도 유지할 자세 값 번호(앉기처럼 그 상태로 남는 동작)
+// 자세 값 번호를 관절 이름으로 찾는 표
+const PIDX = {
+  la: { sw: 0, sp: 1, el: 2, tw: 18, wr: 20 }, ra: { sw: 3, sp: 4, el: 5, tw: 19, wr: 21 },
+  ll: { hip: 6, knee: 7, sp: 22, tw: 24, ank: 26 }, rl: { hip: 8, knee: 9, sp: 23, tw: 25, ank: 27 },
+  head: { turn: 10, nod: 11, tilt: 28 }, waist: { bend: 12, side: 13, twist: 14 }, chest: { bend: 15, side: 16, twist: 17 },
+};
+// 포즈: 지금 시간에 자세 하나를 통째로 잡는다 (적지 않은 관절은 기본 자세)
+const POSES = [
+  { id: 'tpose', name: 'T자', set: { la: { sp: 90 }, ra: { sp: 90 } } },
+  { id: 'hips', name: '허리에 손', set: { la: { sw: -15, sp: 38, el: 100, tw: 75 }, ra: { sw: -15, sp: 38, el: 100, tw: 75 } } },
+  { id: 'crossed', name: '팔짱', set: { la: { sw: 25, sp: 6, el: 96, tw: 85 }, ra: { sw: 30, sp: 6, el: 104, tw: 85 }, chest: { bend: -4 } } },
+  { id: 'think', name: '생각', set: { ra: { sw: 30, sp: 4, el: 138, tw: 25 }, la: { sw: 18, sp: 4, el: 92, tw: 85 }, head: { nod: 10, tilt: -6 } } },
+  { id: 'run', name: '달리기', set: { ll: { hip: 55, knee: 60 }, rl: { hip: -25, knee: 70 }, la: { sw: -40, sp: 8, el: 90 }, ra: { sw: 48, sp: 8, el: 95 }, waist: { bend: 8 }, chest: { bend: 12 } } },
+  { id: 'kneel', name: '무릎 꿇기', set: { ll: { hip: 85, knee: 85 }, rl: { hip: -5, knee: 95 }, la: { sw: 40, el: 30 }, ra: { sw: 10, el: 15 } } },
+  { id: 'wide', name: '다리 벌려 서기', set: { ll: { sp: 22 }, rl: { sp: 22 }, la: { sp: 25 }, ra: { sp: 25 } } },
+];
+const PRESETS = [
+  { id: 'jump', name: '점프', steps: [
+    { f: 0 }, { f: 4, legs: [40, 80], arms: [-35, 8, 10] }, { f: 7, legs: [0, 0], arms: [70, 8, 10] },
+    { f: 14, y: 0.5, legs: [25, 50], arms: [120, 10, 10] }, { f: 21, legs: [10, 20], arms: [40, 10, 10] },
+    { f: 25, legs: [35, 70], arms: [10, 5, 15] }, { f: 32 }] },
+  { id: 'sit', name: '앉기', needs: ['legs'], hold: [6, 7, 8, 9], steps: [{ f: 0 }, { f: 12, legs: [90, 90] }] },
+  { id: 'stand', name: '일어서기', needs: ['legs'], hold: [6, 7, 8, 9], steps: [{ f: 0 }, { f: 12, legs: [0, 0] }] },
+  { id: 'wave', name: '손 흔들기', arm: true, steps: [
+    { f: 0 }, { f: 6, arm: [0, 150, 15] }, { f: 10, arm: [0, 166, 15] }, { f: 14, arm: [0, 136, 15] },
+    { f: 18, arm: [0, 166, 15] }, { f: 22, arm: [0, 136, 15] }, { f: 26, arm: [0, 150, 15] }, { f: 34 }] },
+  { id: 'point', name: '가리키기', arm: true, steps: [{ f: 0 }, { f: 7, arm: [85, 8, 0] }, { f: 31, arm: [85, 8, 0] }, { f: 40 }] },
+  { id: 'cheer', name: '만세', needs: ['la', 'ra'], steps: [{ f: 0 }, { f: 8, arms: [170, 14, 0] }, { f: 32, arms: [170, 14, 0] }, { f: 42 }] },
+  { id: 'punch', name: '주먹 지르기', arm: true, steps: [{ f: 0 }, { f: 4, arm: [25, 12, 120] }, { f: 7, arm: [88, 4, 0] }, { f: 11, arm: [30, 12, 110] }, { f: 18 }] },
+  { id: 'kick', name: '발차기', needs: ['legs'], steps: [{ f: 0 }, { f: 5, rleg: [-20, 70] }, { f: 9, rleg: [88, 5] }, { f: 13, rleg: [55, 45] }, { f: 20 }] },
+  { id: 'nod', name: '끄덕이기', needs: ['head'], steps: [{ f: 0 }, { f: 4, dnod: 26 }, { f: 8, dnod: -2 }, { f: 12, dnod: 26 }, { f: 17 }] },
+  { id: 'shake', name: '고개 젓기', needs: ['head'], steps: [{ f: 0 }, { f: 4, dturn: 34 }, { f: 10, dturn: -34 }, { f: 16, dturn: 34 }, { f: 22, dturn: -34 }, { f: 27 }] },
+  { id: 'bow', name: '인사', needs: ['spine'], steps: [{ f: 0 }, { f: 10, waist: [40, 0, 0], chest: [25, 0, 0], dnod: 18 }, { f: 22, waist: [40, 0, 0], chest: [25, 0, 0], dnod: 18 }, { f: 34 }] },
+  { id: 'sway', name: '춤: 좌우', needs: ['spine'], steps: [
+    { f: 0 },
+    { f: 6, waist: [0, 13, 0], chest: [0, 9, 0], legs: [12, 24], arms: [25, 30, 70] }, { f: 12, waist: [0, 0, 0], chest: [0, 0, 0], legs: [0, 0], arms: [15, 20, 50] },
+    { f: 18, waist: [0, -13, 0], chest: [0, -9, 0], legs: [12, 24], arms: [25, 30, 70] }, { f: 24, waist: [0, 0, 0], chest: [0, 0, 0], legs: [0, 0], arms: [15, 20, 50] },
+    { f: 30, waist: [0, 13, 0], chest: [0, 9, 0], legs: [12, 24], arms: [25, 30, 70] }, { f: 36, waist: [0, 0, 0], chest: [0, 0, 0], legs: [0, 0], arms: [15, 20, 50] },
+    { f: 42, waist: [0, -13, 0], chest: [0, -9, 0], legs: [12, 24], arms: [25, 30, 70] }, { f: 48 }] },
+  { id: 'twist', name: '춤: 트위스트', needs: ['spine'], steps: [
+    { f: 0 },
+    { f: 6, waist: [6, 0, 28], chest: [0, 0, 18], legs: [10, 20], arms: [30, 15, 90] }, { f: 12, waist: [6, 0, -28], chest: [0, 0, -18], legs: [10, 20], arms: [30, 15, 90] },
+    { f: 18, waist: [6, 0, 28], chest: [0, 0, 18], legs: [10, 20], arms: [30, 15, 90] }, { f: 24, waist: [6, 0, -28], chest: [0, 0, -18], legs: [10, 20], arms: [30, 15, 90] },
+    { f: 30, waist: [6, 0, 28], chest: [0, 0, 18], legs: [10, 20], arms: [30, 15, 90] }, { f: 36, waist: [6, 0, -28], chest: [0, 0, -18], legs: [10, 20], arms: [30, 15, 90] },
+    { f: 44 }] },
+];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, u) => a + (b - a) * u;
+const snapT = t => Math.round(t * FPS) / FPS;
+const r2 = v => Math.round(v * 100) / 100;
+const r3 = v => Math.round(v * 1000) / 1000;
+const normDeg = d => { d = ((d % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
+const lerpAngle = (a, b, u) => a + (((b - a + 540) % 360) - 180) * u;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const newId = () => 'a' + Math.random().toString(36).slice(2, 8);
+const newBoxId = () => 'b' + Math.random().toString(36).slice(2, 8);
+// 세로 화각. 화면의 긴 쪽을 36mm 센서로 본다 (가로 화면은 가로가, 세로 화면은 세로가 36mm)
+const lensFov = (mm, r = 16 / 9) => 2 * Math.atan((r >= 1 ? 36 / r : 36) / (2 * mm)) / D2R;
+const pad = n => String(n).padStart(2, '0');
+function tc(t) {
+  const f = Math.round(t * FPS), s = Math.floor(f / FPS);
+  return pad(Math.floor(s / 60)) + ':' + pad(s % 60) + ':' + pad(f % FPS);
+}
+
+/* ---------- 장면 데이터 ---------- */
+function newKey(t, x, z, rot, p, y) { return { t: snapT(t), x, y: y || 0, z, rot, p: POSE.map((_, i) => (p && typeof p[i] === 'number') ? p[i] : 0) }; }
+function newBox(num, x, z, rot, w, h, d, extra) { return Object.assign({ id: newBoxId(), num, name: '', x, y: 0, z, rot, w, h, d, tone: 'light', lock: false }, extra); }
+
+function sampleScene() {
+  const wave = [0, 0, 0, 20, 150, 25, 0, 0, 0, 0];
+  return {
+    v: 1, sample: true, duration: 8,
+    out: { numbers: true, tape: false, grid: true },
+    camera: { ease: true, arc: true, lens: 35, aspect: '16:9', keys: [
+      { t: 0, pos: [0.5, 1.55, 9], tgt: [0, 1.1, 1] },
+      { t: 8, pos: [2.2, 1.5, 5.2], tgt: [1.1, 1.2, 1] },
+    ] },
+    actors: [
+      { id: 'a1', num: 1, name: '주인공', color: TAPE[0], size: SIZE1(), limbs: { head: true, spine: false, la: true, ra: true, legs: true }, autoWalk: true,
+        keys: [newKey(0, -4.5, 1, 90), newKey(5, 0.4, 1, 90), newKey(8, 0.4, 1, 90)] },
+      { id: 'a2', num: 2, name: '상대역', color: TAPE[1], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: true, legs: false }, autoWalk: true,
+        keys: [newKey(0, 1.9, 1, -90), newKey(3.5, 1.9, 1, -90), newKey(4.5, 1.9, 1, -90, wave), newKey(6, 1.9, 1, -90, wave), newKey(7, 1.9, 1, -90)] },
+      { id: 'a3', num: 3, name: '행인', color: TAPE[2], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: false, legs: false }, autoWalk: true,
+        keys: [newKey(0, 5.5, -3, -90), newKey(8, -5, -3, -90)] },
+    ],
+    boxes: [
+      newBox(1, 0, -6, 0, 18, 3.2, 0.3, { name: '뒷벽' }),
+      newBox(2, -3, -1.5, 0, 1.6, 0.75, 0.8, { name: '탁자', tone: 'mid' }),
+    ],
+  };
+}
+function blankScene() {
+  return {
+    v: 1, sample: false, duration: 8,
+    out: { numbers: true, tape: false, grid: true },
+    camera: { ease: true, arc: true, lens: 35, aspect: '16:9', keys: [{ t: 0, pos: [0, 1.55, 8], tgt: [0, 1.1, 0] }] },
+    actors: [{ id: newId(), num: 1, name: '', color: TAPE[0], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: false, legs: false }, autoWalk: true, keys: [newKey(0, 0, 0, 0)] }],
+    boxes: [],
+  };
+}
+// 저장 파일이나 브라우저 저장소에서 온 데이터는 믿지 않고 형태를 다시 맞춘다
+function normalize(o) {
+  if (!o || typeof o !== 'object' || !Array.isArray(o.actors) || !o.camera || !Array.isArray(o.camera.keys) || !o.camera.keys.length) throw new Error('장면 형식이 아님');
+  const num = (v, d = 0) => (typeof v === 'number' && isFinite(v)) ? v : d;
+  const dedupe = (k, i, arr) => i === 0 || k.t - arr[i - 1].t >= EPS;
+  const usedNum = new Set(), usedId = new Set();
+  const actors = o.actors.slice(0, 24).map((a, idx) => {
+    a = a || {};
+    let n = Math.round(num(a.num, idx + 1)); if (n < 1) n = 1; while (usedNum.has(n)) n++; usedNum.add(n);
+    const id = (typeof a.id === 'string' && /^[A-Za-z0-9]{1,16}$/.test(a.id) && !usedId.has(a.id)) ? a.id : newId(); usedId.add(id);
+    const keys = (Array.isArray(a.keys) ? a.keys : []).filter(k => k && typeof k === 'object').map(k => ({
+      t: snapT(clamp(num(k.t), 0, 600)), x: clamp(num(k.x), -LIMIT, LIMIT), y: clamp(num(k.y), 0, MAX_Y), z: clamp(num(k.z), -LIMIT, LIMIT), rot: normDeg(num(k.rot)),
+      p: POSE.map((m, i) => clamp(num(Array.isArray(k.p) ? k.p[i] : 0), m.min, m.max)),
+    })).sort((p, q) => p.t - q.t).filter(dedupe);
+    if (!keys.length) keys.push(newKey(0, 0, 0, 0));
+    const L = a.limbs || {}, S = a.size || {};
+    const sz = k => clamp(num(S[k], 1), SIZE_LIM[k][0], SIZE_LIM[k][1]);
+    return {
+      id, num: n, name: typeof a.name === 'string' ? a.name.slice(0, 24) : '',
+      color: /^#[0-9a-fA-F]{6}$/.test(a.color) ? a.color : TAPE[(n - 1) % TAPE.length],
+      size: { x: sz('x'), y: sz('y'), z: sz('z') },
+      limbs: { head: !!L.head, spine: !!L.spine, la: !!L.la, ra: !!L.ra, legs: !!L.legs }, autoWalk: a.autoWalk !== false, keys,
+    };
+  }).sort((p, q) => p.num - q.num);
+  const v3 = (v, d) => (Array.isArray(v) && v.length === 3) ? v.map((c, i) => clamp(num(c, d[i]), -200, 200)) : d.slice();
+  const ckeys = o.camera.keys.filter(k => k && typeof k === 'object').map(k => ({ t: snapT(clamp(num(k.t), 0, 600)), pos: v3(k.pos, [0, 1.55, 8]), tgt: v3(k.tgt, [0, 1.1, 0]) }))
+    .sort((p, q) => p.t - q.t).filter(dedupe);
+  if (!ckeys.length) throw new Error('카메라 키 없음');
+  // 배경 상자는 예전 파일에 없을 수 있다 (없으면 빈 목록)
+  const usedBoxNum = new Set();
+  const boxes = (Array.isArray(o.boxes) ? o.boxes : []).filter(b => b && typeof b === 'object').slice(0, BOX_MAX).map((b, idx) => {
+    let n = Math.round(num(b.num, idx + 1)); if (n < 1) n = 1; while (usedBoxNum.has(n)) n++; usedBoxNum.add(n);
+    const id = (typeof b.id === 'string' && /^[A-Za-z0-9]{1,16}$/.test(b.id) && !usedId.has(b.id)) ? b.id : newBoxId(); usedId.add(id);
+    const sz = k => r2(clamp(num(b[k], 1), BOX_SIZE_LIM[k][0], BOX_SIZE_LIM[k][1]));
+    return {
+      id, num: n, name: typeof b.name === 'string' ? b.name.slice(0, 24) : '',
+      x: r2(clamp(num(b.x), -BOX_LIM, BOX_LIM)), y: r2(clamp(num(b.y), 0, BOX_Y_MAX)), z: r2(clamp(num(b.z), -BOX_LIM, BOX_LIM)), rot: normDeg(num(b.rot)),
+      w: sz('w'), h: sz('h'), d: sz('d'), tone: toneOf(b.tone).id, lock: !!b.lock,
+    };
+  }).sort((p, q) => p.num - q.num);
+  const out = o.out || {};
+  return {
+    v: 1, sample: !!o.sample, duration: clamp(Math.round(num(o.duration, 8)), 1, 120),
+    out: { numbers: out.numbers !== false, tape: !!out.tape, grid: out.grid !== false },
+    camera: { ease: o.camera.ease !== false, arc: o.camera.arc !== false, lens: LENSES.includes(o.camera.lens) ? o.camera.lens : 35, aspect: ASPECTS.some(a => a.id === o.camera.aspect) ? o.camera.aspect : '16:9', keys: ckeys },
+    actors, boxes,
+  };
+}
+
+/* ---------- 상태 ---------- */
+let state = null, sel = null, time = 0, playing = false, playT0 = 0, view = 'edit', exporting = false;
+let undoStack = [], redoStack = [];
+const dirty = { struct: true, panel: true, tl: true, paths: true, ui: true, render: true };
+function mark(...flags) { for (const f of flags) dirty[f] = true; dirty.render = true; }
+
+const actorById = id => state.actors.find(a => a.id === id) || null;
+const selActor = () => (sel && sel !== 'cam') ? actorById(sel) : null;
+const boxById = id => state.boxes.find(b => b.id === id) || null;
+const selBox = () => (sel && sel !== 'cam') ? boxById(sel) : null;
+const trackKeys = track => track === 'cam' ? state.camera.keys : ((actorById(track) || { keys: [] }).keys);
+
+// 키 사이 구간 찾기: [앞 키, 뒤 키, 진행도, 구간 번호]
+function seg(keys, t) {
+  const n = keys.length;
+  if (n === 1 || t <= keys[0].t) return [keys[0], keys[0], 0, 0];
+  if (t >= keys[n - 1].t) return [keys[n - 1], keys[n - 1], 0, n - 1];
+  let i = 0; while (i < n - 2 && keys[i + 1].t <= t) i++;
+  const k0 = keys[i], k1 = keys[i + 1];
+  return [k0, k1, (t - k0.t) / (k1.t - k0.t), i];
+}
+function sampleActor(a, t) {
+  const [k0, k1, u] = seg(a.keys, t);
+  // 높이는 중력처럼: 올라갈 때는 점점 느려지고 내려올 때는 점점 빨라진다 (키 3개로 포물선 점프가 됨)
+  const uy = k1.y > k0.y ? 1 - (1 - u) * (1 - u) : u * u;
+  return { x: lerp(k0.x, k1.x, u), y: lerp(k0.y, k1.y, uy), z: lerp(k0.z, k1.z, u), rot: lerpAngle(k0.rot, k1.rot, u), p: k0.p.map((v, i) => lerp(v, k1.p[i], u)) };
+}
+// 카메라 길: 키 사이를 곡선으로 이어 중간 키에서 서지 않는다 ('부드럽게'는 첫 키에서 출발·마지막 키에서 멈출 때만).
+// 같은 곳을 보는 두 키가 그 둘레를 돌면(궤도) 직선 대신 원을 그린다 — 키가 90°마다 하나여도 둥글다.
+const ORB_TGT_EPS = 0.02, ORB_MIN_YAW = 3 * D2R, ORB_MIN_R = 0.3;
+const wrapPi = a => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
+const yawAround = (p, c) => Math.atan2(p[0] - c[0], p[2] - c[2]);
+// 키에서의 속도: 앞 구간 기울기 dp · 뒤 구간 dn (없으면 null). 방향이 바뀌거나 멈춘 구간 옆이면 0이라 키를 넘어가지 않는다
+function keySlope(dp, dn, hp, hn, endZero) {
+  if (dp === null) return endZero ? 0 : dn;
+  if (dn === null) return endZero ? 0 : dp;
+  if (dp * dn <= 0) return 0;
+  const m = (dp * hp + dn * hn) / (hp + hn), lim = 3 * Math.min(Math.abs(dp), Math.abs(dn));
+  return Math.sign(m) * Math.min(Math.abs(m), lim);
+}
+function herm(p0, p1, m0, m1, h, u) {
+  const u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * h * m0 + (3 * u2 - 2 * u3) * p1 + (u3 - u2) * h * m1;
+}
+// 구간 j(키 j → j+1)가 궤도인가: 보는 곳이 같고(2cm 이내) 둘 다 그곳에서 30cm 넘게 떨어진 채 3° 넘게 돌았으면
+function orbitSeg(keys, j) {
+  if (state.camera.arc === false) return null;
+  const a = keys[j], b = keys[j + 1];
+  if (Math.hypot(a.tgt[0] - b.tgt[0], a.tgt[1] - b.tgt[1], a.tgt[2] - b.tgt[2]) > ORB_TGT_EPS) return null;
+  const ra = Math.hypot(a.pos[0] - a.tgt[0], a.pos[2] - a.tgt[2]), rb = Math.hypot(b.pos[0] - b.tgt[0], b.pos[2] - b.tgt[2]);
+  if (ra < ORB_MIN_R || rb < ORB_MIN_R) return null;
+  const y0 = yawAround(a.pos, a.tgt), dyaw = wrapPi(yawAround(b.pos, a.tgt) - y0);
+  return Math.abs(dyaw) < ORB_MIN_YAW ? null : { y0, dyaw, ra, rb };
+}
+function sampleCam(t) {
+  const keys = state.camera.keys, n = keys.length;
+  const [k0, k1, u, i] = seg(keys, t);
+  if (k0 === k1) return { pos: k0.pos.slice(), tgt: k0.tgt.slice() };
+  const h = k1.t - k0.t, hp = i > 0 ? k0.t - keys[i - 1].t : 0, hn = i + 2 < n ? keys[i + 2].t - k1.t : 0;
+  const e0 = state.camera.ease && i === 0, e1 = state.camera.ease && i + 2 >= n;
+  const o = orbitSeg(keys, i);
+  if (o) {
+    // 도는 각도만 곡선으로 움직이고, 거리·높이·보는 곳은 돈 만큼 따라간다
+    const c = k0.tgt, d = o.dyaw / h;
+    const rate = (p, q, dt) => Math.hypot(p[0] - c[0], p[2] - c[2]) < ORB_MIN_R ? 0 : wrapPi(yawAround(q, c) - yawAround(p, c)) / dt;
+    const dp = i > 0 ? rate(keys[i - 1].pos, k0.pos, hp) : null, dn = i + 2 < n ? rate(k1.pos, keys[i + 2].pos, hn) : null;
+    const yaw = herm(0, o.dyaw, keySlope(dp, d, hp, h, e0), keySlope(d, dn, h, hn, e1), h, u), f = yaw / o.dyaw;
+    const r = lerp(o.ra, o.rb, f), dy = lerp(k0.pos[1] - k0.tgt[1], k1.pos[1] - k1.tgt[1], f);
+    const tgt = k0.tgt.map((v, j) => lerp(v, k1.tgt[j], f));
+    return { pos: [tgt[0] + r * Math.sin(o.y0 + yaw), tgt[1] + dy, tgt[2] + r * Math.cos(o.y0 + yaw)], tgt };
+  }
+  const curve = (F, j) => {
+    const d = (k1[F][j] - k0[F][j]) / h;
+    const dp = i > 0 ? (k0[F][j] - keys[i - 1][F][j]) / hp : null, dn = i + 2 < n ? (keys[i + 2][F][j] - k1[F][j]) / hn : null;
+    return herm(k0[F][j], k1[F][j], keySlope(dp, d, hp, h, e0), keySlope(d, dn, h, hn, e1), h, u);
+  };
+  return { pos: [0, 1, 2].map(j => curve('pos', j)), tgt: [0, 1, 2].map(j => curve('tgt', j)) };
+}
+// 이동 중이면 걷는 동작을 자세에 더한다
+function walkInfo(a, t) {
+  const keys = a.keys, n = keys.length;
+  if (n < 2) return null;
+  const [k0, k1, u, i] = seg(keys, t);
+  if (k0 === k1) return null;
+  const len = j => Math.hypot(keys[j + 1].x - keys[j].x, keys[j + 1].z - keys[j].z);
+  const speed = j => len(j) / (keys[j + 1].t - keys[j].t);
+  const sp = speed(i);
+  if (sp < 0.08) return null;
+  let dist = len(i) * u; for (let j = 0; j < i; j++) dist += len(j);
+  let w = 1; const ramp = 0.3;
+  if (i === 0 || speed(i - 1) < 0.08) w = Math.min(w, (t - k0.t) / ramp);
+  if (i === n - 2 || speed(i + 1) < 0.08) w = Math.min(w, (k1.t - t) / ramp);
+  return { w: clamp(w, 0, 1), phase: dist / (1.5 * a.size.y) * Math.PI * 2, speed: sp };
+}
+function finalPose(a, s, t) {
+  const p = s.p.slice();
+  if (a.autoWalk && (a.limbs.la || a.limbs.ra || a.limbs.legs)) {
+    const wi = walkInfo(a, t);
+    if (wi) {
+      const amp = clamp(18 + wi.speed * 9, 18, 42) * wi.w, sn = Math.sin(wi.phase), cs = Math.cos(wi.phase);
+      p[6] += amp * sn; p[7] += 55 * wi.w * Math.max(0, cs);
+      p[8] -= amp * sn; p[9] += 55 * wi.w * Math.max(0, -cs);
+      p[0] -= amp * 0.8 * sn; p[2] += 12 * wi.w;
+      p[3] += amp * 0.8 * sn; p[5] += 12 * wi.w;
+    }
+  }
+  return p;
+}
+// 지금 시간의 키를 찾고, 없으면 지금 모습 그대로 새 키를 만든다
+function actorKeyAt(a, t, create) {
+  let k = a.keys.find(k => Math.abs(k.t - t) < EPS);
+  if (!k && create) {
+    const s = sampleActor(a, t);
+    k = { t: snapT(t), x: s.x, y: r2(s.y), z: s.z, rot: normDeg(s.rot), p: s.p.map(Math.round) };
+    a.keys.push(k); a.keys.sort((p, q) => p.t - q.t); mark('tl', 'paths');
+  }
+  return k || null;
+}
+function camKeyAt(t, create) {
+  const keys = state.camera.keys;
+  let k = keys.find(k => Math.abs(k.t - t) < EPS);
+  if (!k && create) {
+    const s = sampleCam(t);
+    k = { t: snapT(t), pos: s.pos.map(r3), tgt: s.tgt.map(r3) };
+    keys.push(k); keys.sort((p, q) => p.t - q.t); mark('tl', 'paths');
+  }
+  return k || null;
+}
+
+/* ---------- 기록(실행 취소) ---------- */
+function persist(json) { try { localStorage.setItem(STORE_KEY, json); } catch (_) { /* 저장소를 못 쓰는 환경 */ } }
+function commit(keepSample) {
+  if (!keepSample) state.sample = false;
+  const json = JSON.stringify(state);
+  if (undoStack[undoStack.length - 1] === json) return;
+  undoStack.push(json); if (undoStack.length > 120) undoStack.shift();
+  redoStack.length = 0; persist(json); mark('ui');
+}
+function restore(json) {
+  state = JSON.parse(json); setPlaying(false); time = clamp(time, 0, state.duration);
+  if (sel && sel !== 'cam' && !actorById(sel) && !boxById(sel)) sel = null;
+  resetVisuals(); persist(json); mark('struct', 'panel');
+}
+function undo() { if (undoStack.length < 2) return; redoStack.push(undoStack.pop()); restore(undoStack[undoStack.length - 1]); }
+function redo() { if (!redoStack.length) return; const j = redoStack.pop(); undoStack.push(j); restore(j); }
+function replaceScene(obj) {
+  state = obj; sel = null; time = 0; setPlaying(false); resetVisuals(); commit(true); mark('struct', 'panel');
+}
+let commitTimer = 0;
+function commitSoon() { clearTimeout(commitTimer); commitTimer = setTimeout(commit, 350); }
+
+/* ---------- 3D 무대 ---------- */
+const stage = $('#stage'), canvas = $('#view'), panel = $('#panel');
+if (typeof THREE === 'undefined') { $('#stage-msg').hidden = false; return; }
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); }
+catch (_) { $('#stage-msg').hidden = false; return; }
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const BG = '#C6CBD1', STAGE_DARK = '#11161C';
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(BG);
+scene.fog = new THREE.Fog(BG, 35, 110);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8f969e, 0.62));
+const sun = new THREE.DirectionalLight(0xffffff, 0.45);
+sun.position.set(7, 14, 6); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 50 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: '#D7DBDF', roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+// 바닥 격자: 1칸 = 1m, 5m마다 굵은 선. 카메라 바로 옆을 지나는 긴 선이 통째로 잘리지 않도록 1m 토막으로 나눠 그린다
+const grid = new THREE.Group();
+{
+  const HALF = 30, minor = [], major = [];
+  for (let i = -HALF; i <= HALF; i++) {
+    const dst = (i % 5 === 0) ? major : minor;
+    for (let k = -HALF; k < HALF; k++) dst.push(i, 0, k, i, 0, k + 1, k, 0, i, k + 1, 0, i);
+  }
+  const lines = (pts, color) => {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  };
+  grid.add(lines(minor, '#B3B9C0'), lines(major, '#89919A'));
+}
+grid.position.y = 0.003; scene.add(grid);
+
+const editCam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+editCam.layers.enable(1); editCam.layers.enable(2);   // 1: 편집 보조선, 2: 번호
+const shotCam = new THREE.PerspectiveCamera(32, 16 / 9, 0.1, 400);
+const orbit = { tx: 0, ty: 0.9, tz: 0, yaw: 0.5, pitch: 0.42, dist: 11.5 };
+
+// 배우 치수 (m)
+const R = 0.28, APO = R * Math.cos(Math.PI / 6), TOP = 1.7, HIP_Y = 0.88;
+const SHOULDER_Y = 1.40, SHOULDER_X = R + 0.065, ARM_R = 0.06, UPPER = 0.30, FORE = 0.30;
+const NECK_Y = 1.44, HEAD_GAP = 0.03, HEAD_H = 0.23, HEAD_R = 0.13;   // 머리를 붙이면 몸통이 목 높이까지 줄고 전체 키는 그대로
+const HIP_X = 0.125, LEG_R = 0.095, THIGH = 0.44, SHIN = 0.44;
+const HEX_GEO = new THREE.CylinderGeometry(1, 1, 1, 6); HEX_GEO.rotateY(Math.PI / 6);   // 평평한 면이 앞(+z)을 보게
+const LIMB_GEO = HEX_GEO.clone(); LIMB_GEO.translate(0, -0.5, 0);                         // 관절에서 아래로 늘어지게
+const PLANE_GEO = new THREE.PlaneGeometry(1, 1);
+const NOSE_GEO = new THREE.BoxGeometry(0.05, 0.06, 0.06);   // 머리가 어느 쪽을 보는지 알려 주는 코
+const FOOT_GEO = new THREE.BoxGeometry(1, 1, 1); FOOT_GEO.translate(0, -0.5, 0.25);   // 발목에서 아래·앞으로 뻗는 발
+const RING_GEO = new THREE.RingGeometry(0.42, 0.5, 6); RING_GEO.rotateX(-Math.PI / 2);
+const ARROW_GEO = new THREE.BufferGeometry();
+ARROW_GEO.setAttribute('position', new THREE.Float32BufferAttribute([-0.1, 0, 0.6, 0.1, 0, 0.6, 0, 0, 0.8], 3));
+
+// 배우 크기를 반영한 치수. 키(Y)는 세로 길이 전부, 너비(X)·두께(Z)는 몸통 단면과 어깨·골반 간격, 팔다리 굵기는 둘의 평균을 따른다.
+// 관절 묶음에는 배율을 걸지 않고 토막마다 따로 크기를 줘서, 팔다리를 돌려도 길이가 변하지 않는다
+function dimsOf(a) {
+  const sx = a.size.x, sy = a.size.y, sz = a.size.z, g = clamp(Math.sqrt(sx * sz), 0.45, 2.5);
+  return { sx, sy, sz, g, top: TOP * sy, hip: HIP_Y * sy, neck: NECK_Y * sy, shoulderY: SHOULDER_Y * sy, shoulderX: R * sx + 0.065 * g, hipX: HIP_X * sx,
+    upper: UPPER * sy, fore: FORE * sy, hand: 0.11 * sy, thigh: THIGH * sy, shin: SHIN * sy, footH: 0.07 * sy, footL: 0.25 * sy, footW: 0.15 * g, headR: HEAD_R * g, headH: HEAD_H * sy, headGap: HEAD_GAP * sy, armR: ARM_R * g, legR: LEG_R * g };
+}
+function numTexture(n) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#131A21'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `600 ${n > 9 ? 70 : 98}px "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace`;
+  g.fillText(String(n), 64, 70);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t;
+}
+
+const vis = new Map();   // 배우 id → 3D 물체 묶음
+let pickables = [];
+function makeVisual(a) {
+  const mat = new THREE.MeshStandardMaterial({ color: CLAY, flatShading: true, roughness: 0.95, metalness: 0 });
+  const group = new THREE.Group();
+  const part = (geo, sx, sy) => { const m = new THREE.Mesh(geo, mat); m.scale.set(sx, sy, sx); m.castShadow = true; m.userData.actor = a.id; return m; };
+  // 몸통은 하·중·상 세 토막. 허리(하-중)와 가슴(중-상) 관절로 이어지고, 팔·머리·번호는 위 토막을 따라 움직인다
+  const lower = part(HEX_GEO, R, 1), mid = part(HEX_GEO, R, 1), upper = part(HEX_GEO, R, 1);
+  const waist = new THREE.Group(), chest = new THREE.Group();
+  waist.rotation.order = chest.rotation.order = 'YXZ';
+  chest.add(upper); waist.add(mid, chest); group.add(lower, waist);
+  const numMat = new THREE.MeshBasicMaterial({ map: numTexture(a.num), transparent: true, depthWrite: false });
+  const numF = new THREE.Mesh(PLANE_GEO, numMat); numF.scale.set(0.27, 0.27, 1); numF.position.set(0, 1.18, APO + 0.004);
+  const numT = new THREE.Mesh(PLANE_GEO, numMat); numT.scale.set(0.34, 0.34, 1); numT.rotation.x = -Math.PI / 2; numT.position.set(0, TOP + 0.004, 0);
+  numF.layers.set(2); numT.layers.set(2); chest.add(numF, numT);
+  const ringMat = new THREE.MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(RING_GEO, ringMat), arrow = new THREE.Mesh(ARROW_GEO, ringMat);
+  ring.position.y = arrow.position.y = 0.012; ring.layers.set(1); arrow.layers.set(1); group.add(ring, arrow);
+  // 팔다리 사슬: 뿌리(어깨·골반) → 중간 관절(팔꿈치·무릎) → 끝 관절(손목·발목). end는 발바닥 위치를 재는 점
+  const chain = (parent, isLeg) => {
+    const root = new THREE.Group(); root.rotation.order = 'XZY';   // 앞뒤 → 옆으로 → 비틀기 순서로 돈다
+    const joint = new THREE.Group(), tip = new THREE.Group(), end = new THREE.Object3D();
+    const m1 = part(LIMB_GEO, 1, 1), m2 = part(LIMB_GEO, 1, 1), m3 = part(isLeg ? FOOT_GEO : LIMB_GEO, 1, 1);
+    tip.add(m3); joint.add(m2, tip, end); root.add(m1, joint); parent.add(root);
+    return { root, joint, tip, end, meshes: [m1, m2, m3] };
+  };
+  const headRoot = new THREE.Group(); headRoot.position.y = NECK_Y; headRoot.rotation.order = 'YXZ';
+  const skull = part(HEX_GEO, HEAD_R, HEAD_H); skull.position.y = HEAD_GAP + HEAD_H / 2;
+  const nose = new THREE.Mesh(NOSE_GEO, mat); nose.castShadow = true; nose.userData.actor = a.id;
+  nose.position.set(0, HEAD_GAP + HEAD_H * 0.45, HEAD_R * Math.cos(Math.PI / 6) + 0.025);
+  headRoot.add(skull, nose); chest.add(headRoot);
+  const head = { root: headRoot, meshes: [skull, nose] };
+  const armL = chain(chest, false), armR = chain(chest, false);
+  const legL = chain(group, true), legR = chain(group, true);
+  scene.add(group);
+  const path = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: a.color }));
+  const dots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: a.color, size: 7, sizeAttenuation: false }));
+  path.layers.set(1); dots.layers.set(1); path.frustumCulled = dots.frustumCulled = false; scene.add(path, dots);
+  return { group, lower, mid, upper, waist, chest, mat, numMat, numF, numT, ring, ringMat, arrow, head, armL, armR, legL, legR, path, dots };
+}
+function disposeVisual(v) {
+  scene.remove(v.group, v.path, v.dots);
+  v.mat.dispose(); if (v.numMat.map) v.numMat.map.dispose(); v.numMat.dispose(); v.ringMat.dispose();
+  v.path.geometry.dispose(); v.path.material.dispose(); v.dots.geometry.dispose(); v.dots.material.dispose();
+}
+// 배경 상자: 바닥면이 y=0 인 단위 상자를 크기만큼 늘린다. 모서리 선은 출력에도 보이고(형태가 읽히게),
+// 선택 표시(파란 모서리)는 편집 보조선 층(1)이라 배치 화면에서만 보인다
+const BOX_GEO = new THREE.BoxGeometry(1, 1, 1); BOX_GEO.translate(0, 0.5, 0);
+const BOX_EDGE_GEO = new THREE.EdgesGeometry(BOX_GEO);
+const TONE_MAT = {}, TONE_EDGE = {};
+for (const t of TONES) {
+  TONE_MAT[t.id] = new THREE.MeshStandardMaterial({ color: t.face, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  TONE_EDGE[t.id] = new THREE.LineBasicMaterial({ color: t.edge });
+}
+const BOX_HI_MAT = new THREE.LineBasicMaterial({ color: '#2457D6' });
+const boxVis = new Map();   // 상자 id → 3D 물체
+function makeBoxVisual(b) {
+  const mesh = new THREE.Mesh(BOX_GEO, TONE_MAT.light);
+  mesh.castShadow = mesh.receiveShadow = true; mesh.userData.box = b.id;
+  const edges = new THREE.LineSegments(BOX_EDGE_GEO, TONE_EDGE.light);
+  const hi = new THREE.LineSegments(BOX_EDGE_GEO, BOX_HI_MAT); hi.layers.set(1); hi.renderOrder = 1;
+  mesh.add(edges, hi); scene.add(mesh);
+  return { mesh, edges, hi };
+}
+function resetVisuals() {
+  for (const v of vis.values()) disposeVisual(v); vis.clear();
+  for (const v of boxVis.values()) scene.remove(v.mesh); boxVis.clear();
+}
+
+// 카메라 표시(배치 화면에서만 보임)
+const camGizmo = new THREE.Group();
+const gizMat = new THREE.MeshBasicMaterial({ color: '#27313C' });
+const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.4), gizMat); camBody.position.z = -0.2;
+const frustum = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#27313C' }));
+{
+  const c = [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], pts = [];
+  for (let i = 0; i < 4; i++) { pts.push(0, 0, 0, ...c[i], ...c[i], ...c[(i + 1) % 4]); }
+  frustum.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+}
+camGizmo.add(camBody, frustum); camGizmo.traverse(o => o.layers.set(1)); scene.add(camGizmo);
+const camPath = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#27313C' }));
+const camDots = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: '#27313C', size: 7, sizeAttenuation: false }));
+camPath.layers.set(1); camDots.layers.set(1); camPath.frustumCulled = camDots.frustumCulled = false; scene.add(camPath, camDots);
+// 카메라가 보는 곳 표시(배치 화면 전용): 궤도 프리셋은 이 점을 중심으로 돈다
+const camAim = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#27313C' }));
+camAim.geometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.18, 0, 0, 0.18, 0, 0, 0, -0.18, 0, 0, 0.18, 0, 0, 0, -0.18, 0, 0, 0.18], 3));
+camAim.layers.set(1); scene.add(camAim);
+
+function syncStructure() {
+  const ids = new Set(state.actors.map(a => a.id));
+  for (const [id, v] of vis) if (!ids.has(id)) { disposeVisual(v); vis.delete(id); }
+  pickables = [];
+  for (const a of state.actors) {
+    if (!vis.has(a.id)) vis.set(a.id, makeVisual(a));
+    const v = vis.get(a.id);
+    v.mat.color.set(state.out.tape ? a.color : CLAY);
+    const d = v.dims = dimsOf(a);
+    const top = a.limbs.head ? d.neck : d.top, bottom = a.limbs.legs ? d.hip : 0, sg = (top - bottom) / 3;
+    const chestY = bottom + 2 * sg;   // 가슴 관절 높이. 그 위에 붙는 것들은 이 높이를 기준으로 놓는다
+    const bw = R * d.sx, bd = R * d.sz;
+    v.lower.scale.set(bw, sg, bd); v.lower.position.y = bottom + sg / 2;
+    v.waist.position.y = bottom + sg; v.mid.scale.set(bw, sg, bd); v.mid.position.y = sg / 2;
+    v.chest.position.y = sg; v.upper.scale.set(bw, sg, bd); v.upper.position.y = sg / 2;
+    const setChain = (c, x, y, r, l1, l2) => { c.root.position.set(x, y, 0); c.meshes[0].scale.set(r, l1, r); c.joint.position.y = -l1; c.meshes[1].scale.set(r * 0.92, l2, r * 0.92); };
+    for (const [c, sgn] of [[v.armL, 1], [v.armR, -1]]) {
+      setChain(c, sgn * d.shoulderX, d.shoulderY - chestY, d.armR, d.upper, d.fore);
+      c.tip.position.y = -d.fore; c.meshes[2].scale.set(d.armR * 1.35, d.hand, d.armR * 0.8);   // 손
+    }
+    for (const [c, sgn] of [[v.legL, 1], [v.legR, -1]]) {
+      setChain(c, sgn * d.hipX, d.hip, d.legR, d.thigh, d.shin);
+      c.end.position.y = -d.shin; c.tip.position.y = -d.shin + d.footH; c.meshes[2].scale.set(d.footW, d.footH, d.footL);   // 발
+    }
+    v.head.root.position.y = d.neck - chestY; v.head.root.visible = a.limbs.head;
+    const skull = v.head.meshes[0], nose = v.head.meshes[1];
+    skull.scale.set(d.headR, d.headH, d.headR); skull.position.y = d.headGap + d.headH / 2;
+    nose.scale.setScalar(d.g); nose.position.set(0, d.headGap + d.headH * 0.45, d.headR * Math.cos(Math.PI / 6) + 0.025 * d.g);
+    // 앞 번호: 몸통 앞면 안에 들어가게 크기를 맞춘다
+    let ns = 0.27 * clamp(Math.min(d.sx, d.sy), 0.45, 1.6); if (a.limbs.spine) ns = Math.min(ns, sg * 0.9);
+    v.numF.scale.set(ns, ns, 1); v.numF.position.set(0, a.limbs.spine ? sg / 2 : 1.18 * d.sy - chestY, APO * d.sz + 0.004);
+    // 위에서 보는 번호는 머리가 있으면 머리 위에, 없으면 기둥 위에
+    if (a.limbs.head) { const s2 = 0.2 * d.g; v.head.root.add(v.numT); v.numT.position.set(0, d.headGap + d.headH + 0.004, 0); v.numT.scale.set(s2, s2, 1); }
+    else { const s2 = 0.34 * clamp(Math.min(d.sx, d.sz), 0.45, 2); v.chest.add(v.numT); v.numT.position.set(0, d.top - chestY + 0.004, 0); v.numT.scale.set(s2, s2, 1); }
+    v.armL.root.visible = a.limbs.la; v.armR.root.visible = a.limbs.ra;
+    v.legL.root.visible = v.legR.root.visible = a.limbs.legs;
+    const on = sel === a.id, rs = on ? 1.18 : 1;
+    v.ringMat.opacity = on ? 1 : 0.55; v.ring.scale.set(rs * d.sx, 1, rs * d.sz); v.arrow.position.z = 0.5 * (d.sz - 1);
+    pickables.push(v.lower, v.mid, v.upper);
+    if (a.limbs.head) pickables.push(...v.head.meshes);
+    if (a.limbs.la) pickables.push(...v.armL.meshes);
+    if (a.limbs.ra) pickables.push(...v.armR.meshes);
+    if (a.limbs.legs) pickables.push(...v.legL.meshes, ...v.legR.meshes);
+  }
+  const bids = new Set(state.boxes.map(b => b.id));
+  for (const [id, v] of boxVis) if (!bids.has(id)) { scene.remove(v.mesh); boxVis.delete(id); }
+  for (const b of state.boxes) {
+    if (!boxVis.has(b.id)) boxVis.set(b.id, makeBoxVisual(b));
+    const v = boxVis.get(b.id), tone = toneOf(b.tone);
+    v.mesh.material = TONE_MAT[tone.id]; v.edges.material = TONE_EDGE[tone.id];
+    v.hi.visible = sel === b.id;
+    pickables.push(v.mesh);   // 고정된 상자도 넣는다: 뒤에 가린 배우가 잡히지 않게
+  }
+  grid.visible = state.out.grid;
+}
+function rebuildPaths() {
+  const setPts = (line, dots, pts, dotPts = pts) => {
+    line.geometry.dispose(); line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    dots.geometry.dispose(); dots.geometry = new THREE.BufferGeometry().setFromPoints(dotPts);
+    line.visible = pts.length > 1;
+  };
+  for (const a of state.actors) {
+    const v = vis.get(a.id); if (!v) continue;
+    setPts(v.path, v.dots, a.keys.map(k => new THREE.Vector3(k.x, 0.02 + k.y, k.z)));
+  }
+  // 카메라 길은 곡선이라 키 사이를 촘촘히 짚어 그린다 (점은 키 자리에만)
+  const ck = state.camera.keys, line = [];
+  if (ck.length > 1) {
+    const t0 = ck[0].t, t1 = ck[ck.length - 1].t, N = Math.min(1200, Math.max(2, Math.ceil((t1 - t0) * FPS)));
+    for (let s = 0; s <= N; s++) { const c = sampleCam(t0 + (t1 - t0) * s / N); line.push(new THREE.Vector3(c.pos[0], c.pos[1], c.pos[2])); }
+  }
+  setPts(camPath, camDots, line, ck.map(k => new THREE.Vector3(k.pos[0], k.pos[1], k.pos[2])));
+}
+const _wp = new THREE.Vector3();
+const worldY = o => o.getWorldPosition(_wp).y;
+// 발 기울기: 정강이가 서 있는 동안(45도 이내)에는 발을 바닥과 나란히 두고, 많이 누우면(80도 이상) 정강이를 따라가게 둔다.
+// 그래서 서거나 앉으면 발바닥이 바닥에 붙고, 차거나 무릎을 꿇으면 발끝이 자연스럽게 향한다. 발목 값은 그 위에 더한다(+는 발끝을 위로)
+function footPitch(shinAngle, ankle) {
+  const w = clamp((80 - Math.abs(shinAngle)) / 35, 0, 1);
+  return -(shinAngle * w + ankle) * D2R;
+}
+function applyTime(t) {
+  for (const a of state.actors) {
+    const v = vis.get(a.id); if (!v) continue;
+    const s = sampleActor(a, t), p = finalPose(a, s, t);
+    v.group.position.set(s.x, 0, s.z); v.group.rotation.y = s.rot * D2R;
+    v.armL.root.rotation.set(-p[0] * D2R, -p[18] * D2R, p[1] * D2R); v.armL.joint.rotation.x = -p[2] * D2R; v.armL.tip.rotation.x = -p[20] * D2R;
+    v.armR.root.rotation.set(-p[3] * D2R, p[19] * D2R, -p[4] * D2R); v.armR.joint.rotation.x = -p[5] * D2R; v.armR.tip.rotation.x = -p[21] * D2R;
+    v.legL.root.rotation.set(-p[6] * D2R, p[24] * D2R, p[22] * D2R); v.legL.joint.rotation.x = p[7] * D2R; v.legL.tip.rotation.x = footPitch(p[7] - p[6], p[26]);
+    v.legR.root.rotation.set(-p[8] * D2R, -p[25] * D2R, -p[23] * D2R); v.legR.joint.rotation.x = p[9] * D2R; v.legR.tip.rotation.x = footPitch(p[9] - p[8], p[27]);
+    v.head.root.rotation.set(p[11] * D2R, p[10] * D2R, -p[28] * D2R);
+    const sp = a.limbs.spine ? D2R : 0;   // 몸통을 나누지 않았으면 곧은 기둥 그대로
+    v.waist.rotation.set(p[12] * sp, p[14] * sp, -p[13] * sp);
+    v.chest.rotation.set(p[15] * sp, p[17] * sp, -p[16] * sp);
+    // 높이는 가장 낮은 곳(발바닥이나 무릎)의 높이. 다리를 굽히거나 벌리면 몸이 그만큼 내려가서 바닥에 닿는다
+    let lift = s.y;
+    if (a.limbs.legs) {
+      v.group.updateMatrixWorld(true);
+      const low = Math.min(worldY(v.legL.end), worldY(v.legL.joint), worldY(v.legR.end), worldY(v.legR.joint));
+      lift -= clamp(low, 0, v.dims.hip - 0.02);
+    }
+    v.group.position.y = lift;
+    v.ring.position.y = v.arrow.position.y = 0.012 - lift;   // 바닥 표시는 뛰어도 바닥에 남는다
+  }
+  for (const b of state.boxes) {
+    const v = boxVis.get(b.id); if (!v) continue;
+    v.mesh.position.set(b.x, b.y, b.z); v.mesh.rotation.y = b.rot * D2R; v.mesh.scale.set(b.w, b.h, b.d);
+  }
+  const c = sampleCam(t);
+  shotCam.position.fromArray(c.pos); shotCam.lookAt(c.tgt[0], c.tgt[1], c.tgt[2]);
+  camGizmo.position.fromArray(c.pos); camGizmo.lookAt(c.tgt[0], c.tgt[1], c.tgt[2]); camAim.position.fromArray(c.tgt);
+  const sr = shotRatio(), th = Math.tan(lensFov(state.camera.lens, sr) * D2R / 2), d = 1.0;
+  frustum.scale.set(d * th * sr, d * th, d);
+  const cp = Math.cos(orbit.pitch);
+  editCam.position.set(orbit.tx + orbit.dist * cp * Math.sin(orbit.yaw), orbit.ty + orbit.dist * Math.sin(orbit.pitch), orbit.tz + orbit.dist * cp * Math.cos(orbit.yaw));
+  editCam.lookAt(orbit.tx, orbit.ty, orbit.tz);
+}
+
+/* ---------- 그리기 ---------- */
+const shotAspect = () => ASPECTS.find(a => a.id === (state && state.camera.aspect)) || ASPECTS[0];
+const shotRatio = () => shotAspect().r;
+const camRect = (W, H) => { const r = shotRatio(), w = Math.min(W, H * r), h = w / r; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; };
+const pipRect = (W, H) => { const r = shotRatio(), w = Math.min(clamp(W * 0.3, 150, 300), clamp(H * 0.5, 110, 300) * r), h = w / r; return { x: W - w - 12, y: H - h - 12, w, h }; };
+function prepShot(aspect, output) {
+  shotCam.aspect = aspect; shotCam.fov = lensFov(state.camera.lens, shotRatio()); shotCam.updateProjectionMatrix();
+  if (output && !state.out.numbers) shotCam.layers.disable(2); else shotCam.layers.enable(2);
+}
+function setVP(r, H) { renderer.setViewport(r.x, H - r.y - r.h, r.w, r.h); renderer.setScissor(r.x, H - r.y - r.h, r.w, r.h); }
+function renderView() {
+  const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
+  renderer.setScissorTest(true);
+  if (view === 'edit') {
+    editCam.aspect = W / H; editCam.updateProjectionMatrix();
+    setVP({ x: 0, y: 0, w: W, h: H }, H); renderer.render(scene, editCam);
+    prepShot(shotRatio(), true); setVP(pipRect(W, H), H); renderer.render(scene, shotCam);
+  } else {
+    renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
+    renderer.setClearColor(STAGE_DARK, 1); renderer.clear();
+    renderer.setScissorTest(true);
+    prepShot(shotRatio(), true); setVP(camRect(W, H), H); renderer.render(scene, shotCam);
+  }
+}
+function drawExportFrame(t, w, h) {
+  applyTime(t); renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h);
+  prepShot(w / h, true); renderer.render(scene, shotCam);
+}
+function resize() {
+  const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(W, H, false);
+  layoutPip(); mark();
+}
+function layoutPip() {
+  const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
+  const r = pipRect(W, H);
+  Object.assign($('#pip').style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+}
+new ResizeObserver(() => { if (!exporting) resize(); }).observe(stage);
+
+/* ---------- 선택 · 시간 · 화면 ---------- */
+function select(id) { if (sel === id) return; sel = id; mark('struct', 'panel'); }
+function setTime(t) { time = clamp(snapT(t), 0, state.duration); mark('ui'); }
+function setPlaying(p) {
+  if (p === playing) return;
+  if (p) { if (time >= state.duration - EPS) time = 0; playT0 = performance.now() - time * 1000; }
+  else time = clamp(snapT(time), 0, state.duration);
+  playing = p; mark('ui');
+}
+function setView(v) {
+  if (view === v) return; view = v;
+  if (v === 'cam' && !selActor()) sel = 'cam';
+  mark('struct', 'panel');
+}
+
+/* ---------- 무대 조작 ---------- */
+const ray = new THREE.Raycaster(), v2 = new THREE.Vector2(), v3a = new THREE.Vector3();
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), UP = new THREE.Vector3(0, 1, 0);
+const activeCam = () => view === 'edit' ? editCam : shotCam;
+function ndc(e) {
+  const b = canvas.getBoundingClientRect();
+  const r = view === 'edit' ? { x: 0, y: 0, w: b.width, h: b.height } : camRect(b.width, b.height);
+  const px = e.clientX - b.left - r.x, py = e.clientY - b.top - r.y;
+  return { x: px / r.w * 2 - 1, y: -(py / r.h) * 2 + 1, inside: px >= 0 && py >= 0 && px <= r.w && py <= r.h };
+}
+// 가장 앞에 맞은 것: 배우, 또는 (배치 화면에서) 고정되지 않은 배경 상자. 고정 상자·카메라 화면의 상자는 빈 곳처럼 다룬다
+function pick(e) {
+  const n = ndc(e); if (!n.inside) return null;
+  ray.setFromCamera(v2.set(n.x, n.y), activeCam());
+  const hits = ray.intersectObjects(pickables, false);
+  if (!hits.length) return null;
+  const h = hits[0], u = h.object.userData;
+  if (u.actor) { const a = actorById(u.actor); return a ? { kind: 'actor', item: a } : null; }
+  const b = u.box ? boxById(u.box) : null;
+  return (b && !b.lock && view === 'edit') ? { kind: 'box', item: b, point: h.point } : null;
+}
+// 바닥(또는 높이 y 의 수평면)에서 포인터가 가리키는 점
+function groundPoint(e, y = 0) {
+  const n = ndc(e);
+  ray.setFromCamera(v2.set(n.x, n.y), activeCam());
+  GROUND.constant = -y;
+  const hit = ray.ray.intersectPlane(GROUND, v3a);
+  if (!hit || hit.distanceTo(ray.ray.origin) > 150) return null;
+  return { x: hit.x, z: hit.z };
+}
+// 카메라 화면에서 구도를 바꾸면 지금 시간의 카메라 키에 적는다
+function camEdit(fn) {
+  const c = sampleCam(time); fn(c);
+  c.pos[1] = Math.max(0.05, c.pos[1]);
+  const k = camKeyAt(time, true); k.pos = c.pos.map(r3); k.tgt = c.tgt.map(r3);
+  mark('paths', 'ui');
+}
+function orbitBy(dx, dy) {
+  if (view === 'edit') {
+    orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.005, 0.03, 1.5); mark();
+  } else camEdit(c => {
+    const ox = c.pos[0] - c.tgt[0], oy = c.pos[1] - c.tgt[1], oz = c.pos[2] - c.tgt[2];
+    const dist = Math.max(0.2, Math.hypot(ox, oy, oz));
+    const yaw = Math.atan2(ox, oz) - dx * 0.005, pitch = clamp(Math.asin(clamp(oy / dist, -1, 1)) + dy * 0.005, -1.25, 1.45);
+    c.pos = [c.tgt[0] + dist * Math.cos(pitch) * Math.sin(yaw), c.tgt[1] + dist * Math.sin(pitch), c.tgt[2] + dist * Math.cos(pitch) * Math.cos(yaw)];
+  });
+}
+function panBy(dx, dy) {
+  if (view === 'edit') {
+    const s = orbit.dist * 0.0016, cy = Math.cos(orbit.yaw), sy = Math.sin(orbit.yaw);
+    orbit.tx = clamp(orbit.tx + (-dx * cy - dy * sy) * s, -25, 25);
+    orbit.tz = clamp(orbit.tz + (dx * sy - dy * cy) * s, -25, 25); mark();
+  } else camEdit(c => {
+    const f = new THREE.Vector3(c.tgt[0] - c.pos[0], c.tgt[1] - c.pos[1], c.tgt[2] - c.pos[2]);
+    const dist = f.length(); f.normalize();
+    const r = new THREE.Vector3().crossVectors(f, UP).normalize(), u = new THREE.Vector3().crossVectors(r, f);
+    const s = 2 * dist * Math.tan(lensFov(state.camera.lens, shotRatio()) * D2R / 2) / camRect(stage.clientWidth, stage.clientHeight).h;
+    const d = r.multiplyScalar(-dx * s).add(u.multiplyScalar(dy * s)).toArray();
+    for (let i = 0; i < 3; i++) { c.pos[i] += d[i]; c.tgt[i] += d[i]; }
+  });
+}
+function zoomBy(f) {
+  if (view === 'edit') { orbit.dist = clamp(orbit.dist * f, 1.5, 90); mark(); }
+  else camEdit(c => {
+    const o = [c.pos[0] - c.tgt[0], c.pos[1] - c.tgt[1], c.pos[2] - c.tgt[2]];
+    const dist = Math.max(0.01, Math.hypot(o[0], o[1], o[2])), nd = clamp(dist * f, 0.3, 90);
+    c.pos = o.map((v, i) => c.tgt[i] + v * nd / dist);
+  });
+}
+
+const ptrs = new Map(); let gest = null;
+function finishGesture() {
+  if (gest && gest.moved && (gest.mode === 'actor' || gest.mode === 'box' || view === 'cam')) commit();
+  gest = null;
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!state || exporting) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* 일부 입력 장치 */ }
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 2) {
+    finishGesture();
+    const [a, b] = [...ptrs.values()];
+    gest = { mode: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, moved: false };
+    return;
+  }
+  if (ptrs.size > 2) return;
+  const hit = (e.button === 0 && !e.shiftKey) ? pick(e) : null;
+  if (hit && hit.kind === 'actor') {
+    const a = hit.item;
+    setPlaying(false); select(a.id);
+    const g = groundPoint(e), s = sampleActor(a, time);
+    gest = { mode: 'actor', id: a.id, ox: g ? s.x - g.x : 0, oz: g ? s.z - g.z : 0, moved: false, sx: e.clientX, sy: e.clientY };
+  } else if (hit && hit.kind === 'box') {
+    // 잡은 점의 높이에서 수평으로 끈다 (벽 윗부분을 잡아도 손가락 아래를 따라온다)
+    const b = hit.item, py = Math.max(0, hit.point.y), g = groundPoint(e, py);
+    select(b.id);
+    gest = { mode: 'box', id: b.id, py, ox: g ? b.x - g.x : 0, oz: g ? b.z - g.z : 0, moved: false, sx: e.clientX, sy: e.clientY };
+  } else {
+    gest = { mode: (e.button !== 0 || e.shiftKey) ? 'pan' : 'orbit', moved: false, sx: e.clientX, sy: e.clientY, primary: e.button === 0 && !e.shiftKey };
+    if (view === 'cam') setPlaying(false);
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p || !gest) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (gest.mode === 'pinch') {
+    if (ptrs.size < 2) return;
+    const [a, b] = [...ptrs.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (d > 0 && gest.d > 0) zoomBy(gest.d / d);
+    panBy(mx - gest.mx, my - gest.my);
+    gest.d = d; gest.mx = mx; gest.my = my; gest.moved = true; return;
+  }
+  if (!gest.moved && Math.hypot(e.clientX - gest.sx, e.clientY - gest.sy) < 4) return;
+  gest.moved = true;
+  if (gest.mode === 'actor') {
+    const a = actorById(gest.id), g = groundPoint(e); if (!a || !g) return;
+    const k = actorKeyAt(a, time, true);
+    k.x = r2(clamp(g.x + gest.ox, -LIMIT, LIMIT)); k.z = r2(clamp(g.z + gest.oz, -LIMIT, LIMIT));
+    mark('paths', 'ui');
+  } else if (gest.mode === 'box') {
+    const b = boxById(gest.id), g = groundPoint(e, gest.py); if (!b || !g) return;
+    b.x = r2(clamp(g.x + gest.ox, -BOX_LIM, BOX_LIM)); b.z = r2(clamp(g.z + gest.oz, -BOX_LIM, BOX_LIM));
+    mark('ui');
+  } else if (gest.mode === 'orbit') orbitBy(dx, dy);
+  else panBy(dx, dy);
+});
+function endPtr(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (!gest) return;
+  if (gest.mode === 'pinch') { if (ptrs.size < 2) finishGesture(); return; }
+  if (ptrs.size === 0) {
+    if (!gest.moved && gest.mode === 'orbit' && gest.primary && e.type === 'pointerup') select(view === 'cam' ? 'cam' : null);
+    finishGesture();
+  }
+}
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  if (!state || exporting) return;
+  e.preventDefault();
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  if (view === 'cam') setPlaying(false);
+  zoomBy(Math.exp(clamp(dy, -400, 400) * 0.0012));
+  if (view === 'cam') commitSoon();
+}, { passive: false });
+
+/* ---------- 패널 ---------- */
+const limbsLabel = a => { const l = []; if (a.limbs.head) l.push('머리'); if (a.limbs.spine) l.push('몸통'); if (a.limbs.la) l.push('왼팔'); if (a.limbs.ra) l.push('오른팔'); if (a.limbs.legs) l.push('다리'); return l.length ? l.join('·') : '기둥'; };
+const rangeField = (id, label, min, max, step, attrs = '') =>
+  `<div class="field"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" ${attrs}><output id="${id}-o" for="${id}"></output></div>`;
+const sizeField = (k, label) => `<div class="field"><label for="f-s${k}">${label}</label><input type="range" id="f-s${k}" min="-1.74" max="${k === 'y' ? 1.58 : 3}" step="0.02" data-size="${k}"><output id="f-s${k}-o" for="f-s${k}"></output></div>`;
+const sizeText = (k, v) => ((k === 'x' ? 2 * R : k === 'y' ? TOP : 2 * APO) * v).toFixed(2) + 'm';
+const closedGroups = new Set();   // 접어 둔 관절 묶음 이름
+const limbGroup = (name, idxs) => `<details class="limb" data-group="${name}"${closedGroups.has(name) ? '' : ' open'}><summary>${name}</summary><div class="limb-body">${idxs.map(poseField).join('')}</div></details>`;
+const poseField = i => rangeField('f-p' + i, POSE[i].label, POSE[i].min, POSE[i].max, 1, `data-pose="${i}"`);
+
+function actorInspector(a) {
+  let h = `<section class="sec"><div class="insp-head"><span class="hexchip" style="--c:${a.color}">${a.num}</span><h3>배우 ${a.num}</h3><span class="keystate" id="keystate"></span></div>`;
+  h += `<div class="field name"><label for="f-name">이름</label><input type="text" id="f-name" maxlength="24" placeholder="예: 주인공" value="${esc(a.name)}"></div>`;
+  h += `<div class="field two"><label for="f-x">위치 (m)</label><div class="xy"><span>X</span><input type="number" id="f-x" step="0.1" min="${-LIMIT}" max="${LIMIT}" aria-label="X 위치"></div><div class="xy"><span>Z</span><input type="number" id="f-z" step="0.1" min="${-LIMIT}" max="${LIMIT}" aria-label="Z 위치"></div></div>`;
+  h += rangeField('f-rot', '방향', -180, 180, 5) + rangeField('f-y', '높이', 0, MAX_Y, 0.05) + '</section>';
+  h += '<section class="sec"><h2>크기</h2>' + sizeField('x', '너비 (X)') + sizeField('y', '키 (Y)') + sizeField('z', '두께 (Z)')
+    + '<div class="rowbtns"><button type="button" class="btn" id="btn-size-reset">기본 크기로</button></div></section>';
+  h += '<section class="sec"><h2>관절</h2><p class="note">필요한 것만 붙이세요. 붙이지 않으면 기둥 그대로입니다. 몸통은 상·중·하 세 토막으로 나뉘고, 손과 발은 팔다리에 딸려 붙습니다.</p><div class="chips">';
+  for (const [k, n] of [['head', '머리'], ['spine', '몸통'], ['la', '왼팔'], ['ra', '오른팔'], ['legs', '다리']])
+    h += `<button type="button" class="chip-toggle" data-limb="${k}" aria-pressed="${a.limbs[k]}">${a.limbs[k] ? '✓' : '+'} ${n}</button>`;
+  if (Object.keys(LIMB_NAME).some(k => !a.limbs[k])) h += '<button type="button" class="chip-toggle" id="btn-limb-all">전부 붙이기</button>';
+  h += '</div>';
+  if (a.limbs.head) h += limbGroup('머리', [10, 11, 28]);
+  if (a.limbs.spine) h += limbGroup('몸통 위 (가슴)', [15, 16, 17]) + limbGroup('몸통 아래 (허리)', [12, 13, 14]);
+  if (a.limbs.la) h += limbGroup('왼팔', [0, 1, 18, 2, 20]);
+  if (a.limbs.ra) h += limbGroup('오른팔', [3, 4, 19, 5, 21]);
+  if (a.limbs.legs) h += limbGroup('왼다리', [6, 22, 24, 7, 26]) + limbGroup('오른다리', [8, 23, 25, 9, 27]);
+  if (a.limbs.la || a.limbs.ra || a.limbs.legs)
+    h += `<label class="check" for="f-autowalk"><input type="checkbox" id="f-autowalk"${a.autoWalk ? ' checked' : ''}> 이동할 때 걷는 동작 자동</label>`;
+  if (a.limbs.head || a.limbs.spine || a.limbs.la || a.limbs.ra || a.limbs.legs)
+    h += '<div class="rowbtns"><button type="button" class="btn" id="btn-rest">기본 자세로</button></div>';
+  h += '</section>';
+  h += '<section class="sec"><h2>포즈</h2><p class="note">지금 시간에 자세 하나를 잡습니다. 사람 모양이 되도록 관절이 모두 붙습니다.</p><div class="chips">'
+    + POSES.map(p => `<button type="button" class="btn" data-posture="${p.id}">${p.name}</button>`).join('') + '</div></section>';
+  h += '<section class="sec"><h2>동작 프리셋</h2><p class="note">지금 시간부터 동작을 넣고 바로 재생합니다. 필요한 관절은 알아서 붙습니다.</p><div class="chips">'
+    + PRESETS.map(p => `<button type="button" class="btn" data-preset="${p.id}">${p.name}</button>`).join('') + '</div></section>';
+  h += '<section class="sec"><div class="rowbtns"><button type="button" class="btn" id="btn-delkey">이 시점의 키 삭제</button><button type="button" class="btn danger" id="btn-delactor">배우 삭제</button></div></section>';
+  return h;
+}
+function camInspector() {
+  let h = '<section class="sec"><div class="insp-head"><span class="camchip">CAM</span><h3>카메라</h3><span class="keystate" id="keystate"></span></div>';
+  h += '<div class="field name"><span class="note">렌즈</span><div class="seg" role="group" aria-label="렌즈">' + LENSES.map(l => `<button type="button" data-lens="${l}" aria-pressed="${state.camera.lens === l}">${l}mm</button>`).join('') + '</div></div>';
+  const asp = shotAspect();
+  h += `<div class="stack-s"><span class="note">화면 비율 · ${asp.hint}</span><div class="seg" role="group" aria-label="화면 비율">` + ASPECTS.map(a => `<button type="button" data-aspect="${a.id}" title="${a.hint}" aria-pressed="${a.id === asp.id}">${a.id}</button>`).join('') + '</div></div>';
+  h += `<label class="check" for="f-ease"><input type="checkbox" id="f-ease"${state.camera.ease ? ' checked' : ''}> 첫 키에서 부드럽게 출발, 마지막 키에서 부드럽게 멈춤</label>`;
+  h += `<label class="check" for="f-arc"><input type="checkbox" id="f-arc"${state.camera.arc !== false ? ' checked' : ''}> 같은 곳을 보며 돌면 원을 그리며 이동</label>`;
+  h += '<p class="note">키 사이는 곡선으로 이어져 중간 키에서 서지 않습니다. 중간에 멈추려면 같은 구도로 키를 두 번 찍으세요. 카메라 화면에서 화면을 끌어 구도를 잡으면 지금 시간에 카메라 키가 찍힙니다.</p><div class="rowbtns">';
+  if (view === 'edit') h += '<button type="button" class="btn" id="btn-cam-from-view">지금 보는 시점을 카메라로</button>';
+  h += '<button type="button" class="btn" id="btn-delkey">이 시점의 키 삭제</button></div></section>';
+  h += `<section class="sec"><h2>카메라 무빙</h2><p class="note">지금 구도에서 출발해 장면 끝(${tc(state.duration)})까지 움직입니다. 지금 시간 뒤의 카메라 키는 새로 찍힙니다. 돌기는 보는 곳(배치 화면의 + 표시)을 중심으로 돕니다.</p>`;
+  h += '<div class="rowbtns"><button type="button" class="btn" id="btn-cam-cast">배우들 가운데 보기</button></div>';
+  h += '<div class="stack-s"><span class="note">방향 · 카메라가 움직이는 쪽</span><div class="seg" role="group" aria-label="무빙 방향">'
+    + `<button type="button" data-mdir="-1" aria-pressed="${moveDir < 0}">← 왼쪽</button><button type="button" data-mdir="1" aria-pressed="${moveDir > 0}">오른쪽 →</button></div></div>`;
+  h += '<div class="chips">' + CAM_MOVES.map(m => `<button type="button" class="btn" data-move="${m.id}" title="${m.tip}">${m.name}</button>`).join('') + '</div></section>';
+  return h;
+}
+const numField = (id, label, min, max, step) =>
+  `<div class="field name"><label for="${id}">${label}</label><input type="number" id="${id}" min="${min}" max="${max}" step="${step}"></div>`;
+const boxMeta = b => `${+b.w.toFixed(2)}×${+b.h.toFixed(2)}×${+b.d.toFixed(2)}m${b.lock ? ' · 고정' : ''}`;
+function boxList() {
+  let h = '<section class="sec"><h2>배경</h2>';
+  if (state.boxes.length) {
+    h += '<ul class="cast">';
+    for (const b of state.boxes)
+      h += `<li><button type="button" class="cast-row${sel === b.id ? ' on' : ''}" data-sel="${b.id}"><span class="boxchip" style="--c:${toneOf(b.tone).face}">${b.num}</span><span class="nm${b.name ? '' : ' empty'}" data-name-of="${b.id}">${b.name ? esc(b.name) : '이름 없음'}</span><span class="meta" data-meta-of="${b.id}">${boxMeta(b)}</span></button></li>`;
+    h += '</ul>';
+  } else h += '<p class="note">벽·건물·탁자 같은 배경을 직육면체로 세워 둘 수 있습니다. 장면 내내 움직이지 않습니다.</p>';
+  return h + '<button type="button" class="btn wide" id="btn-add-box">+ 상자 추가</button></section>';
+}
+function boxInspector(b) {
+  let h = `<section class="sec"><div class="insp-head"><span class="boxchip" style="--c:${toneOf(b.tone).face}">${b.num}</span><h3>배경 상자 ${b.num}</h3></div>`;
+  h += `<div class="field name"><label for="f-bname">이름</label><input type="text" id="f-bname" maxlength="24" placeholder="예: 뒷벽" value="${esc(b.name)}"></div>`;
+  h += `<div class="field two"><label for="f-bx">위치 (m)</label><div class="xy"><span>X</span><input type="number" id="f-bx" step="0.1" min="${-BOX_LIM}" max="${BOX_LIM}" aria-label="X 위치"></div><div class="xy"><span>Z</span><input type="number" id="f-bz" step="0.1" min="${-BOX_LIM}" max="${BOX_LIM}" aria-label="Z 위치"></div></div>`;
+  h += rangeField('f-brot', '방향', -180, 180, 5) + numField('f-by', '띄우기 (m)', 0, BOX_Y_MAX, 0.1);
+  h += '<p class="note">장면 내내 이 자리에 있는 배경이라 타임라인 키가 없습니다. 무대에서 끌어 옮길 수 있습니다(배치 화면).</p></section>';
+  h += '<section class="sec"><h2>크기 (m)</h2>' + numField('f-bw', '너비 (X)', BOX_SIZE_LIM.w[0], BOX_SIZE_LIM.w[1], 0.1)
+    + numField('f-bh', '높이 (Y)', BOX_SIZE_LIM.h[0], BOX_SIZE_LIM.h[1], 0.1) + numField('f-bd', '깊이 (Z)', BOX_SIZE_LIM.d[0], BOX_SIZE_LIM.d[1], 0.1)
+    + '<div class="chips">' + BOX_PRESETS.map((p, i) => `<button type="button" class="btn" data-boxsize="${i}" title="${p.w} × ${p.h} × ${p.d}m">${p.name}</button>`).join('') + '</div></section>';
+  h += '<section class="sec"><h2>색 · 고정</h2><div class="seg" role="group" aria-label="상자 색">'
+    + TONES.map(t => `<button type="button" data-tone="${t.id}" aria-pressed="${b.tone === t.id}">${t.name}</button>`).join('') + '</div>';
+  h += `<label class="check" for="f-block"><input type="checkbox" id="f-block"${b.lock ? ' checked' : ''}> 고정 (무대에서 눌러도 잡히지 않음)</label></section>`;
+  h += '<section class="sec"><div class="rowbtns"><button type="button" class="btn" id="btn-dup-box">옆에 복제</button><button type="button" class="btn danger" id="btn-del-box">상자 삭제</button></div></section>';
+  return h;
+}
+function buildPanel() {
+  const A = selActor(), B = selBox(), o = state.out;
+  let h = '<section class="sec"><h2>출연</h2><ul class="cast">';
+  h += `<li><button type="button" class="cast-row${sel === 'cam' ? ' on' : ''}" data-sel="cam"><span class="camchip">CAM</span><span class="nm">카메라</span><span class="meta">${state.camera.lens}mm · ${shotAspect().id}</span></button></li>`;
+  for (const a of state.actors)
+    h += `<li><button type="button" class="cast-row${sel === a.id ? ' on' : ''}" data-sel="${a.id}"><span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span><span class="meta">${limbsLabel(a)}</span></button></li>`;
+  h += '</ul><button type="button" class="btn wide" id="btn-add-actor">+ 배우 추가</button></section>';
+  if (A) h += actorInspector(A);
+  else if (sel === 'cam') h += camInspector();
+  else if (!B) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
+  h += boxList();
+  if (B) h += boxInspector(B);
+  h += '<section class="sec"><h2>출력 화면</h2>'
+    + `<label class="check" for="o-numbers"><input type="checkbox" id="o-numbers"${o.numbers ? ' checked' : ''}> 번호 표시</label>`
+    + `<label class="check" for="o-tape"><input type="checkbox" id="o-tape"${o.tape ? ' checked' : ''}> 배우마다 색 구분</label>`
+    + `<label class="check" for="o-grid"><input type="checkbox" id="o-grid"${o.grid ? ' checked' : ''}> 바닥 격자 (1칸 1m)</label>`
+    + '<p class="note">카메라 화면과 내보낸 영상에 적용됩니다. 배치 화면에서는 번호가 항상 보입니다.</p></section>';
+  $('#panel-body').innerHTML = h;
+}
+
+function addActor() {
+  if (state.actors.length >= 24) { toast('배우는 24명까지 둘 수 있습니다.'); return; }
+  const used = new Set(state.actors.map(a => a.num)); let n = 1; while (used.has(n)) n++;
+  const here = state.actors.map(a => sampleActor(a, time));
+  const bx = Math.round(clamp(orbit.tx, -LIMIT + 6, LIMIT - 6)), bz = Math.round(clamp(orbit.tz, -LIMIT + 6, LIMIT - 6));
+  let x = bx, z = bz;
+  search: for (let ring = 0; ring < 6; ring++) for (const dx of [0, 1, -1, 2, -2, 3, -3]) {
+    const cx = bx + dx, cz = bz + ring;
+    if (!here.some(s => Math.hypot(s.x - cx, s.z - cz) < 0.9)) { x = cx; z = cz; break search; }
+  }
+  const a = { id: newId(), num: n, name: '', color: TAPE[(n - 1) % TAPE.length], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: false, legs: false }, autoWalk: true, keys: [newKey(time, x, z, 0)] };
+  state.actors.push(a); state.actors.sort((p, q) => p.num - q.num);
+  setPlaying(false); sel = a.id; commit(); mark('struct', 'panel');
+}
+function deleteKeyHere() {
+  if (!sel) return;
+  const keys = trackKeys(sel), i = keys.findIndex(k => Math.abs(k.t - time) < EPS);
+  if (i < 0) { toast('이 시점에는 키가 없습니다.'); return; }
+  if (keys.length < 2) { toast('마지막 키는 지울 수 없습니다.'); return; }
+  keys.splice(i, 1); commit(); mark('tl', 'paths', 'ui');
+}
+function applyPose(A, id) {
+  const P = POSES.find(p => p.id === id); if (!P) return;
+  setPlaying(false);
+  const attached = [];
+  for (const k of Object.keys(LIMB_NAME)) if (!A.limbs[k]) { A.limbs[k] = true; attached.push(LIMB_NAME[k]); }
+  const p = REST();
+  for (const part of Object.keys(P.set)) for (const j of Object.keys(P.set[part])) p[PIDX[part][j]] = P.set[part][j];
+  actorKeyAt(A, time, true).p = p;
+  commit(); mark('struct', 'panel', 'tl', 'ui');
+  toast(`${tc(time)}에 '${P.name}' 포즈를 잡았습니다.` + (attached.length ? ` 관절(${attached.join(', ')})도 붙였습니다.` : ''));
+}
+function applyPreset(A, id) {
+  const P = PRESETS.find(p => p.id === id); if (!P) return;
+  setPlaying(false);
+  const attached = [];
+  const need = k => { if (!A.limbs[k]) { A.limbs[k] = true; attached.push(LIMB_NAME[k]); } };
+  let side = 'ra';
+  if (P.arm) { side = A.limbs.ra ? 'ra' : (A.limbs.la ? 'la' : 'ra'); need(side); }
+  for (const k of P.needs || []) need(k);
+  const len = P.steps[P.steps.length - 1].f / FPS;
+  const t0 = snapT(clamp(time, 0, Math.max(0, state.duration - len)));
+  const times = P.steps.map(st => snapT(t0 + st.f / FPS));
+  const bases = times.map(t => sampleActor(A, t));   // 고치기 전의 원래 움직임을 먼저 읽어 둔다
+  let last = null;
+  P.steps.forEach((st, i) => {
+    const b = bases[i], k = actorKeyAt(A, times[i], true), p = b.p.map(Math.round);
+    const put = (idx, vals) => vals.forEach((v, j) => { p[idx[j]] = v; });
+    if (st.arm) put(JOINT[side], st.arm);
+    if (st.arms) { put(JOINT.la, st.arms); put(JOINT.ra, st.arms); }
+    if (st.legs) { put(JOINT.ll, st.legs); put(JOINT.rl, st.legs); }
+    if (st.rleg) put(JOINT.rl, st.rleg);
+    if (st.waist) put(JOINT.waist, st.waist);
+    if (st.chest) put(JOINT.chest, st.chest);
+    if (st.dturn !== undefined) p[10] = clamp(p[10] + st.dturn, POSE[10].min, POSE[10].max);
+    if (st.dnod !== undefined) p[11] = clamp(p[11] + st.dnod, POSE[11].min, POSE[11].max);
+    k.x = r2(b.x); k.z = r2(b.z); k.rot = normDeg(b.rot); k.y = r2(clamp(b.y + (st.y || 0), 0, MAX_Y)); k.p = p;
+    last = k;
+  });
+  if (P.hold) { const tEnd = times[times.length - 1]; for (const k of A.keys) if (k.t > tEnd + EPS) for (const i of P.hold) k.p[i] = last.p[i]; }
+  commit(); mark('struct', 'panel', 'tl', 'paths', 'ui');
+  setTime(t0); setPlaying(true);
+  toast(`${tc(t0)}부터 '${P.name}' 동작을 넣었습니다.` + (attached.length ? ` 필요한 관절(${attached.join(', ')})도 붙였습니다.` : ''));
+}
+// 카메라 무빙 프리셋: 지금 시간의 키는 남기고, 그 뒤 키는 지운 다음 장면 끝까지 새 키를 찍는다
+let moveDir = 1;   // 1: 오른쪽, -1: 왼쪽 (카메라가 움직이는 쪽)
+function applyCamMove(id) {
+  const M = CAM_MOVES.find(m => m.id === id); if (!M) return;
+  setPlaying(false);
+  const t0 = snapT(time), t1 = state.duration, dir = moveDir;
+  if (id !== 'hold' && t1 - t0 < 0.5) { toast('장면 끝까지 0.5초도 남지 않았습니다. 재생 위치를 앞으로 옮겨 주세요.'); return; }
+  const c = sampleCam(t0), P = c.pos, T = c.tgt;
+  const rel = [P[0] - T[0], P[1] - T[1], P[2] - T[2]], rh = Math.hypot(rel[0], rel[2]), dist = Math.hypot(rel[0], rel[1], rel[2]);
+  const fx = rh > 1e-3 ? -rel[0] / rh : 0, fz = rh > 1e-3 ? -rel[2] / rh : -1;   // 바닥에서 본 시선 방향
+  const add = (a, b) => a.map((v, j) => v + b[j]);
+  const rot = (v, a) => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];   // 위에서 보아 반시계로 a
+  const ends = [];   // [장면 끝까지의 진행도, pos, tgt]
+  switch (id) {
+    case 'hold': break;
+    case 'in': {
+      const nd = Math.max(0.8, dist * 0.5);
+      if (nd > dist - 0.05) { toast('이미 보는 곳에 충분히 가깝습니다.'); return; }
+      ends.push([1, add(T, rel.map(v => v * nd / dist)), T]); break;
+    }
+    case 'out': ends.push([1, add(T, rel.map(v => v * 1.8)), T]); break;
+    case 'truck': { const s = dir * clamp(dist * 0.5, 1, 6), sh = [-fz * s, 0, fx * s]; ends.push([1, add(P, sh), add(T, sh)]); break; }
+    case 'pan': ends.push([1, P, add(P, rot([-rel[0], -rel[1], -rel[2]], -45 * D2R * dir))]); break;
+    case 'up': ends.push([1, [P[0], P[1] + clamp(dist * 0.45, 1.2, 5), P[2]], T]); break;
+    case 'down': {
+      const y = Math.max(0.3, P[1] - clamp(dist * 0.45, 1.2, 5));
+      if (P[1] - y < 0.1) { toast('이미 바닥 가까이에 있습니다.'); return; }
+      ends.push([1, [P[0], y, P[2]], T]); break;
+    }
+    default: {   // 90° 돌기 · 반 바퀴 · 한 바퀴: 90°마다 키 하나 (그 사이는 원으로 이어진다)
+      if (rh < ORB_MIN_R) { toast('카메라가 보는 곳 바로 위에 있어 돌 수 없습니다. 조금 떨어뜨려 주세요.'); return; }
+      const deg = id === 'arc' ? 90 : id === 'half' ? 180 : 360, n = deg / 90;
+      for (let s = 1; s <= n; s++) ends.push([s / n, add(T, rot(rel, deg * D2R * dir * s / n)), T]);
+    }
+  }
+  const keys = state.camera.keys.filter(k => k.t < t0 - EPS);
+  const fit = v => r3(clamp(v, -200, 200));
+  const put = (t, pos, tgt) => keys.push({ t: snapT(t), pos: [pos[0], Math.max(0.05, pos[1]), pos[2]].map(fit), tgt: tgt.map(fit) });
+  put(t0, P, T);
+  for (const [f, pos, tgt] of ends) put(t0 + (t1 - t0) * f, pos, tgt);
+  state.camera.keys = keys;
+  commit(); mark('tl', 'paths', 'ui');
+  if (id === 'hold') { toast(`${tc(t0)}부터 끝까지 카메라를 멈춰 둡니다.`); return; }
+  setTime(t0); setPlaying(true);
+  toast(`${tc(t0)}부터 끝까지 '${M.name}' 카메라 무빙을 넣었습니다.`);
+}
+// 배우들 가운데(가슴 높이)를 보게 한다. 궤도 프리셋 전에 누르면 배우들 둘레를 돈다
+function camLookAtCast() {
+  const n = state.actors.length; if (!n) { toast('배우가 없습니다.'); return; }
+  setPlaying(false);
+  const m = [0, 0, 0];
+  for (const a of state.actors) { const s = sampleActor(a, time); m[0] += s.x / n; m[1] += (s.y + TOP * a.size.y * 0.63) / n; m[2] += s.z / n; }
+  camEdit(c => { c.tgt = m; });
+  commit();
+  toast(n > 1 ? `배우 ${n}명의 가운데를 보게 했습니다. 이제 돌기 프리셋을 누르면 그 둘레를 돕니다.` : '배우를 보게 했습니다. 이제 돌기 프리셋을 누르면 그 둘레를 돕니다.');
+}
+function newScene() { replaceScene(blankScene()); toast('빈 장면을 열었습니다. 실행 취소로 되돌릴 수 있습니다.'); }
+
+/* 배경 상자 */
+const r1 = v => Math.round(v * 10) / 10;
+function nextBoxNum() { const used = new Set(state.boxes.map(b => b.num)); let n = 1; while (used.has(n)) n++; return n; }
+function pushBox(b) { state.boxes.push(b); state.boxes.sort((p, q) => p.num - q.num); sel = b.id; commit(); mark('struct', 'panel'); }
+// 새 상자는 카메라가 보는 방향으로, 카메라 목표점보다 3m 뒤에 카메라를 마주 보게 세운다 (배경이니까)
+function addBox() {
+  if (state.boxes.length >= BOX_MAX) { toast(`배경 상자는 ${BOX_MAX}개까지 둘 수 있습니다.`); return; }
+  const c = sampleCam(time);
+  let dx = c.tgt[0] - c.pos[0], dz = c.tgt[2] - c.pos[2]; const L = Math.hypot(dx, dz);
+  if (L < 1e-3) { dx = 0; dz = -1; } else { dx /= L; dz /= L; }
+  const rot = normDeg(Math.round(Math.atan2(-dx, -dz) / D2R / 15) * 15);   // 15° 단위로 맞춰 반듯하게
+  const ux = Math.cos(rot * D2R), uz = -Math.sin(rot * D2R);   // 상자 너비 방향
+  let x = c.tgt[0] + dx * 3, z = c.tgt[2] + dz * 3;
+  for (let i = 0; i < 12 && state.boxes.some(o => Math.hypot(o.x - x, o.z - z) < 1); i++) { x += ux * 4.5; z += uz * 4.5; }
+  pushBox(newBox(nextBoxNum(), r1(clamp(x, -BOX_LIM, BOX_LIM)), r1(clamp(z, -BOX_LIM, BOX_LIM)), rot, 4, 2.5, 0.5));
+}
+// 너비만큼 옆으로 붙여서 복제 (벽을 이어 붙이기 쉽게)
+function dupBox(s) {
+  if (state.boxes.length >= BOX_MAX) { toast(`배경 상자는 ${BOX_MAX}개까지 둘 수 있습니다.`); return; }
+  const ux = Math.cos(s.rot * D2R), uz = -Math.sin(s.rot * D2R);
+  pushBox(Object.assign({}, s, { id: newBoxId(), num: nextBoxNum(), x: r2(clamp(s.x + ux * s.w, -BOX_LIM, BOX_LIM)), z: r2(clamp(s.z + uz * s.w, -BOX_LIM, BOX_LIM)), lock: false }));
+}
+function deleteBox(b) { state.boxes = state.boxes.filter(x => x !== b); if (sel === b.id) sel = null; commit(); mark('struct', 'panel'); }
+const BOX_FIELD = {
+  'f-bx': ['x', -BOX_LIM, BOX_LIM], 'f-bz': ['z', -BOX_LIM, BOX_LIM], 'f-by': ['y', 0, BOX_Y_MAX], 'f-brot': ['rot', -180, 180],
+  'f-bw': ['w', ...BOX_SIZE_LIM.w], 'f-bh': ['h', ...BOX_SIZE_LIM.h], 'f-bd': ['d', ...BOX_SIZE_LIM.d],
+};
+function updateBoxMeta(b) { for (const n of $$(`[data-meta-of="${b.id}"]`)) n.textContent = boxMeta(b); }
+// 상자 입력칸: 입력 중(final=false)에는 바로 보여 주기만, 확정(change)에서 기록한다
+function boxField(b, t, final) {
+  if (t.id === 'f-bname') {
+    b.name = t.value.slice(0, 24);
+    for (const n of $$(`[data-name-of="${b.id}"]`)) { n.textContent = b.name || '이름 없음'; n.classList.toggle('empty', !b.name); }
+    if (final) commit();
+    return;
+  }
+  if (t.id === 'f-block') { if (final) { b.lock = t.checked; updateBoxMeta(b); commit(); mark('struct'); } return; }
+  const f = BOX_FIELD[t.id]; if (!f) return;
+  const v = parseFloat(t.value);
+  if (!isFinite(v)) { if (final) t.value = String(b[f[0]]); return; }
+  b[f[0]] = f[0] === 'rot' ? normDeg(Math.round(v)) : r2(clamp(v, f[1], f[2]));
+  mark('ui');
+  if (final) { if (t.type === 'number') t.value = String(b[f[0]]); updateBoxMeta(b); commit(); }
+}
+
+panel.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || !state || exporting) return;
+  const A = selActor(), B = selBox();
+  if (b.dataset.sel) { select(b.dataset.sel); return; }
+  if (b.dataset.tone && B) { B.tone = toneOf(b.dataset.tone).id; commit(); mark('struct', 'panel'); return; }
+  if (b.dataset.boxsize !== undefined && B) {
+    const p = BOX_PRESETS[+b.dataset.boxsize];
+    if (p) { B.w = p.w; B.h = p.h; B.d = p.d; updateBoxMeta(B); commit(); mark('ui'); }
+    return;
+  }
+  if (b.dataset.limb && A) { A.limbs[b.dataset.limb] = !A.limbs[b.dataset.limb]; commit(); mark('struct', 'panel'); return; }
+  if (b.dataset.lens) { state.camera.lens = +b.dataset.lens; commit(); mark('panel'); return; }
+  // 프리셋은 넣자마자 재생하므로 포커스를 재생 버튼으로 옮긴다: 멈추려고 누른 스페이스가 프리셋을 다시 넣지 않게
+  const toPlay = () => { const p = $('#btn-play'); if (p) p.focus({ preventScroll: true }); };
+  if (b.dataset.preset && A) { applyPreset(A, b.dataset.preset); toPlay(); return; }
+  if (b.dataset.posture && A) { applyPose(A, b.dataset.posture); return; }
+  if (b.dataset.aspect && ASPECTS.some(a => a.id === b.dataset.aspect)) { state.camera.aspect = b.dataset.aspect; commit(); mark('panel', 'ui'); return; }
+  if (b.dataset.mdir) { moveDir = +b.dataset.mdir < 0 ? -1 : 1; mark('panel'); return; }
+  if (b.dataset.move) { applyCamMove(b.dataset.move); toPlay(); return; }
+  switch (b.id) {
+    case 'btn-add-actor': addActor(); break;
+    case 'btn-add-box': addBox(); break;
+    case 'btn-dup-box': if (B) dupBox(B); break;
+    case 'btn-del-box': if (B) deleteBox(B); break;
+    case 'btn-new2': newScene(); break;
+    case 'btn-rest': if (A) { setPlaying(false); actorKeyAt(A, time, true).p = REST(); commit(); mark('ui'); } break;
+    case 'btn-limb-all': if (A) { for (const k of Object.keys(LIMB_NAME)) A.limbs[k] = true; commit(); mark('struct', 'panel'); } break;
+    case 'btn-size-reset': if (A) { A.size = SIZE1(); commit(); mark('struct', 'ui'); } break;
+    case 'btn-delkey': deleteKeyHere(); break;
+    case 'btn-cam-cast': camLookAtCast(); break;
+    case 'btn-delactor': if (A) { state.actors = state.actors.filter(x => x !== A); sel = null; commit(); mark('struct', 'panel'); } break;
+    case 'btn-cam-from-view': {
+      setPlaying(false);
+      const k = camKeyAt(time, true); k.pos = editCam.position.toArray().map(r3); k.tgt = [orbit.tx, orbit.ty, orbit.tz].map(r3);
+      commit(); mark('paths', 'ui'); toast('지금 시점을 카메라 키로 찍었습니다.'); break;
+    }
+  }
+});
+panel.addEventListener('toggle', e => {
+  const g = e.target && e.target.dataset && e.target.dataset.group; if (!g) return;
+  if (e.target.open) closedGroups.delete(g); else closedGroups.add(g);
+}, true);
+panel.addEventListener('input', e => {
+  if (!state) return;
+  const t = e.target, B = selBox();
+  if (B && t.id && t.id.startsWith('f-b')) { boxField(B, t, false); return; }
+  const A = selActor(); if (!A) return;
+  if (t.dataset.pose !== undefined) { setPlaying(false); actorKeyAt(A, time, true).p[+t.dataset.pose] = +t.value; mark('ui'); }
+  else if (t.dataset.size) {
+    const k = t.dataset.size; let v = r2(clamp(Math.pow(2, +t.value), SIZE_LIM[k][0], SIZE_LIM[k][1]));
+    if (Math.abs(v - 1) < 0.02) v = 1;
+    A.size[k] = v; mark('struct', 'ui');
+  }
+  else if (t.id === 'f-rot') { setPlaying(false); actorKeyAt(A, time, true).rot = +t.value; mark('ui'); }
+  else if (t.id === 'f-y') { setPlaying(false); actorKeyAt(A, time, true).y = r2(clamp(+t.value, 0, MAX_Y)); mark('paths', 'ui'); }
+  else if (t.id === 'f-name') {
+    A.name = t.value.slice(0, 24);
+    for (const n of $$(`[data-name-of="${A.id}"]`)) { n.textContent = A.name || '이름 없음'; n.classList.toggle('empty', !A.name); }
+  }
+});
+panel.addEventListener('change', e => {
+  if (!state) return;
+  const t = e.target, B = selBox();
+  if (B && t.id && t.id.startsWith('f-b')) { boxField(B, t, true); return; }
+  const A = selActor();
+  if ((t.id === 'f-x' || t.id === 'f-z') && A) {
+    const v = parseFloat(t.value);
+    if (isFinite(v)) { setPlaying(false); actorKeyAt(A, time, true)[t.id === 'f-x' ? 'x' : 'z'] = r2(clamp(v, -LIMIT, LIMIT)); commit(); mark('paths', 'ui'); }
+    else mark('ui');
+  }
+  else if (t.id === 'f-autowalk' && A) { A.autoWalk = t.checked; commit(); mark('ui'); }
+  else if (t.id === 'f-ease') { state.camera.ease = t.checked; commit(); mark('paths', 'ui'); }
+  else if (t.id === 'f-arc') { state.camera.arc = t.checked; commit(); mark('paths', 'ui'); }
+  else if (t.id === 'o-numbers') { state.out.numbers = t.checked; commit(); mark('ui'); }
+  else if (t.id === 'o-tape') { state.out.tape = t.checked; commit(); mark('struct'); }
+  else if (t.id === 'o-grid') { state.out.grid = t.checked; commit(); mark('struct'); }
+  else if (t.dataset.pose !== undefined || t.dataset.size || t.id === 'f-rot' || t.id === 'f-y' || t.id === 'f-name') commit();
+});
+
+/* ---------- 타임라인 ---------- */
+const tlGrid = $('#tl-grid');
+function buildTimeline() {
+  const dur = state.duration, step = dur > 60 ? 10 : dur > 24 ? 5 : dur > 12 ? 2 : 1;
+  let ticks = '';
+  for (let s = 0; s <= dur; s += step) ticks += `<span class="tick" style="left:${s / dur * 100}%">${s}</span>`;
+  let h = `<div class="tl-row tl-ruler"><div class="tl-label tl-unit">초</div><div class="tl-lanewrap" data-track=""><div class="tl-lane">${ticks}<b class="ph-head"></b></div></div></div>`;
+  const row = (track, label, keys, color) => {
+    const marks = keys.map((k, i) => k.t > dur + EPS ? '' : `<i class="key" data-track="${track}" data-i="${i}" style="left:${k.t / dur * 100}%;--c:${color}"></i>`).join('');
+    return `<div class="tl-row${sel === track ? ' on' : ''}"><button type="button" class="tl-label" data-sel="${track}">${label}</button><div class="tl-lanewrap" data-track="${track}"><div class="tl-lane">${marks}</div></div></div>`;
+  };
+  h += row('cam', '<span class="camchip">CAM</span><span class="nm">카메라</span>', state.camera.keys, 'var(--fg)');
+  for (const a of state.actors)
+    h += row(a.id, `<span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span>`, a.keys, a.color);
+  tlGrid.innerHTML = h;
+}
+let tlDrag = null;
+tlGrid.addEventListener('pointerdown', e => {
+  if (!state || exporting) return;
+  const wrap = e.target.closest('.tl-lanewrap'); if (!wrap) return;
+  e.preventDefault();
+  try { tlGrid.setPointerCapture(e.pointerId); } catch (_) { /* 일부 입력 장치 */ }
+  setPlaying(false);
+  const rect = wrap.querySelector('.tl-lane').getBoundingClientRect();
+  const keyEl = e.target.closest('.key');
+  if (keyEl) {
+    const track = keyEl.dataset.track, key = trackKeys(track)[+keyEl.dataset.i];
+    if (!key) return;
+    select(track); setTime(key.t);
+    tlDrag = { mode: 'key', track, key, left: rect.left, width: rect.width, sx: e.clientX, moved: false };
+  } else {
+    if (wrap.dataset.track) select(wrap.dataset.track);
+    tlDrag = { mode: 'scrub', left: rect.left, width: rect.width };
+    setTime(clamp((e.clientX - rect.left) / rect.width, 0, 1) * state.duration);
+  }
+});
+tlGrid.addEventListener('pointermove', e => {
+  if (!tlDrag) return;
+  const t = snapT(clamp((e.clientX - tlDrag.left) / tlDrag.width, 0, 1) * state.duration);
+  if (tlDrag.mode === 'scrub') { setTime(t); return; }
+  if (!tlDrag.moved && Math.abs(e.clientX - tlDrag.sx) < 3) return;
+  tlDrag.moved = true;
+  const keys = trackKeys(tlDrag.track);
+  if (keys.some(k => k !== tlDrag.key && Math.abs(k.t - t) < EPS)) return;
+  tlDrag.key.t = t; keys.sort((p, q) => p.t - q.t); setTime(t); mark('tl', 'paths');
+});
+const tlEnd = () => { if (!tlDrag) return; if (tlDrag.mode === 'key' && tlDrag.moved) commit(); tlDrag = null; };
+tlGrid.addEventListener('pointerup', tlEnd);
+tlGrid.addEventListener('pointercancel', tlEnd);
+tlGrid.addEventListener('click', e => { const b = e.target.closest('button[data-sel]'); if (b && state) select(b.dataset.sel); });
+
+function jumpKey(dir) {
+  const times = new Set();
+  const tracks = (sel && !boxById(sel)) ? [sel] : ['cam', ...state.actors.map(a => a.id)];
+  for (const tr of tracks) for (const k of trackKeys(tr)) if (k.t <= state.duration + EPS) times.add(k.t);
+  const list = [...times].sort((a, b) => a - b);
+  const next = dir > 0 ? list.find(t => t > time + EPS) : list.reverse().find(t => t < time - EPS);
+  if (next !== undefined) { setPlaying(false); setTime(next); }
+}
+
+/* ---------- 화면 맞추기 ---------- */
+const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+const HINTS = {
+  edit: coarse ? '기둥이나 상자를 끌어 옮기세요. 빈 곳을 끌면 둘러보고, 두 손가락으로 확대하고 옮깁니다.' : '기둥이나 상자를 끌어 옮기세요. 빈 곳을 끌면 둘러보고, Shift+끌기로 옮기고, 휠로 확대합니다.',
+  cam: coarse ? '화면을 끌어 구도를 잡으세요. 두 손가락으로 다가가고 옮깁니다. 지금 시간에 카메라 키가 찍힙니다.' : '화면을 끌어 구도를 잡으세요. Shift+끌기로 옮기고, 휠로 다가갑니다. 지금 시간에 카메라 키가 찍힙니다.',
+};
+function setRange(id, v, unit) {
+  const el = document.getElementById(id); if (!el) return;
+  if (el.value !== String(v)) el.value = v;
+  const o = document.getElementById(id + '-o'); if (o) o.textContent = v + unit;
+}
+function setNum(id, v) {
+  const el = document.getElementById(id); if (!el || document.activeElement === el) return;
+  const s = String(r2(v)); if (el.value !== s) el.value = s;
+}
+function syncUI() {
+  $('#tc').textContent = tc(time);
+  tlGrid.style.setProperty('--ph', String(clamp(time / state.duration, 0, 1)));
+  $('#btn-play').textContent = playing ? '멈춤' : '재생';
+  $('#btn-undo').disabled = undoStack.length < 2; $('#btn-redo').disabled = !redoStack.length;
+  $('#banner').hidden = !state.sample;
+  $('#tab-edit').setAttribute('aria-selected', String(view === 'edit'));
+  $('#tab-cam').setAttribute('aria-selected', String(view === 'cam'));
+  stage.classList.toggle('edit', view === 'edit');
+  $('#pip').hidden = view !== 'edit'; layoutPip();
+  $('#hint').textContent = HINTS[view];
+  const durInp = $('#inp-dur'); if (document.activeElement !== durInp) durInp.value = state.duration;
+  for (const el of $$('.key', tlGrid)) {
+    const k = trackKeys(el.dataset.track)[+el.dataset.i];
+    el.classList.toggle('now', !!k && el.dataset.track === sel && Math.abs(k.t - time) < EPS);
+  }
+  const A = selActor(); let has = false, count = 0;
+  if (A) {
+    const s = sampleActor(A, time);
+    setNum('f-x', s.x); setNum('f-z', s.z); setRange('f-rot', Math.round(normDeg(s.rot)), '°'); setRange('f-y', r2(s.y), 'm');
+    for (let i = 0; i < POSE.length; i++) setRange('f-p' + i, Math.round(s.p[i]), '°');
+    for (const k of ['x', 'y', 'z']) {
+      const el = document.getElementById('f-s' + k), o = document.getElementById('f-s' + k + '-o');
+      if (el && document.activeElement !== el) el.value = Math.log2(A.size[k]);
+      if (o) o.textContent = sizeText(k, A.size[k]);
+    }
+    has = !!actorKeyAt(A, time, false); count = A.keys.length;
+  } else if (sel === 'cam') { has = !!camKeyAt(time, false); count = state.camera.keys.length; }
+  const B = selBox();
+  if (B) {
+    for (const k of ['x', 'z', 'y', 'w', 'h', 'd']) setNum('f-b' + k, B[k]);
+    setRange('f-brot', Math.round(normDeg(B.rot)), '°');
+  }
+  const ks = $('#keystate');
+  if (ks) { ks.textContent = has ? '키 있음' : '키 없음'; ks.classList.toggle('has', has); }
+  const del = $('#btn-delkey'); if (del) del.disabled = !has || count < 2;
+}
+
+/* ---------- 상단 · 재생 버튼 ---------- */
+let toastTimer = 0;
+function toast(msg) { const el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3600); }
+
+$('#tab-edit').addEventListener('click', () => setView('edit'));
+$('#tab-cam').addEventListener('click', () => setView('cam'));
+$('#pip').addEventListener('click', () => setView('cam'));
+$('#btn-undo').addEventListener('click', undo);
+$('#btn-redo').addEventListener('click', redo);
+$('#btn-new').addEventListener('click', newScene);
+$('#btn-play').addEventListener('click', () => setPlaying(!playing));
+$('#btn-start').addEventListener('click', () => { setPlaying(false); setTime(0); });
+$('#btn-prevkey').addEventListener('click', () => jumpKey(-1));
+$('#btn-nextkey').addEventListener('click', () => jumpKey(1));
+$('#inp-dur').addEventListener('change', e => {
+  const v = Math.round(parseFloat(e.target.value));
+  if (isFinite(v)) { state.duration = clamp(v, 1, 120); time = clamp(time, 0, state.duration); setPlaying(false); commit(); mark('tl', 'ui'); }
+  e.target.value = state.duration;
+});
+$('#btn-save').addEventListener('click', () => saveFile('hexa-previs-scene.json', JSON.stringify(state, null, 1)));
+$('#btn-load').addEventListener('click', () => $('#file-load').click());
+$('#file-load').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { const obj = normalize(JSON.parse(String(rd.result))); obj.sample = false; replaceScene(obj); toast('장면을 불러왔습니다.'); }
+    catch (_) { toast('장면 파일이 아닙니다. 장면 저장으로 만든 .json 파일을 골라 주세요.'); }
+  };
+  rd.onerror = () => toast('파일을 읽지 못했습니다.');
+  rd.readAsText(f);
+});
+
+window.addEventListener('keydown', e => {
+  if (!state) return;
+  const modalOpen = !$('#export-modal').hidden;
+  if (e.key === 'Escape' && modalOpen && !exporting) { closeExport(); return; }
+  const t = e.target, tag = t && t.tagName || '';
+  const typing = (tag === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (typing || exporting || modalOpen) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'Space' && tag !== 'BUTTON') { e.preventDefault(); setPlaying(!playing); }
+  else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !(tag === 'INPUT' && t.type === 'range')) {
+    e.preventDefault(); setPlaying(false); setTime(time + (e.key === 'ArrowRight' ? 1 : -1) / FPS);
+  }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && sel && tag !== 'INPUT') {
+    e.preventDefault();
+    const B = selBox();
+    if (B) { deleteBox(B); toast('배경 상자를 지웠습니다. 실행 취소로 되돌릴 수 있습니다.'); } else deleteKeyHere();
+  }
+});
+
+/* ---------- 파일 저장 ---------- */
+let dlPromise = null;
+try { if (window.claude && typeof window.claude.use === 'function') dlPromise = window.claude.use('downloads'); } catch (_) { dlPromise = null; }
+async function saveFile(filename, data) {
+  let dl = null;
+  try { dl = dlPromise ? await dlPromise : null; } catch (_) { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename, data }); toast('저장했습니다.'); }
+    catch (err) {
+      const c = err && err.code;
+      if (c === 'declined') toast('저장을 취소했습니다.');
+      else if (c === 'rate_limited') toast('저장 창이 이미 열려 있습니다. 잠시 뒤에 다시 눌러 주세요.');
+      else if (c === 'too_large') toast('파일이 너무 큽니다. 해상도를 낮춰 다시 내보내 주세요.');
+      else toast('이 화면에서는 파일을 저장할 수 없습니다.');
+    }
+    return;
+  }
+  // 뷰어 밖에서 페이지를 직접 연 경우
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (_) { toast('이 화면에서는 파일을 저장할 수 없습니다.'); }
+}
+
+/* ---------- 영상 내보내기 ---------- */
+let exportJob = null, exportBlob = null, exportExt = 'mp4', exportUrl = '';
+const showEx = which => { for (const k of ['setup', 'progress', 'done']) $('#ex-' + k).hidden = k !== which; };
+function setProgress(i, total, label) { $('#ex-bar').value = total ? clamp(i / total, 0, 1) : 0; $('#ex-status').textContent = label; }
+function openExport() {
+  setPlaying(false);
+  $('#ex-res').innerHTML = shotAspect().res.map(([w, h], i) => `<option value="${w}x${h}"${i === 0 ? ' selected' : ''}>${w} × ${h}</option>`).join('');
+  $('#ex-ratio').textContent = `화면 비율 ${shotAspect().id} (${shotAspect().hint})`;
+  showEx('setup'); $('#export-modal').hidden = false;
+}
+function closeExport() { const v = $('#ex-video'); try { v.pause(); } catch (_) { /* 재생 중이 아님 */ } $('#export-modal').hidden = true; }
+
+async function pickEncoder(w, h) {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined' || typeof Mp4Muxer === 'undefined') return null;
+  const cands = window.__hexaCodecs || [['avc1.640028', 'avc'], ['avc1.4D0028', 'avc'], ['avc1.420028', 'avc']];
+  for (const [codec, mux] of cands) {
+    const config = { codec, width: w, height: h, bitrate: Math.round(w * h * FPS * 0.22), framerate: FPS };
+    if (mux === 'avc') config.avc = { format: 'avc' };
+    try { const s = await VideoEncoder.isConfigSupported(config); if (s && s.supported) return { config, mux }; } catch (_) { /* 다음 후보 */ }
+  }
+  return null;
+}
+// 프레임을 하나씩 그려서 바로 인코딩 (실시간보다 빠르고 프레임이 빠지지 않음)
+async function encodeFrames(enc, w, h, total, job) {
+  const muxer = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), video: { codec: enc.mux, width: w, height: h }, fastStart: 'in-memory' });
+  let encErr = null;
+  const ve = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: err => { encErr = err; } });
+  ve.configure(enc.config);
+  const us = 1e6 / FPS, tick = ms => new Promise(r => setTimeout(r, ms));
+  for (let i = 0; i < total; i++) {
+    if (job.abort || encErr) break;
+    drawExportFrame(Math.min(i / FPS, state.duration), w, h);
+    const vf = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
+    ve.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); vf.close();
+    setProgress(i + 1, total, `프레임 ${i + 1} / ${total}`);
+    if (i % 2 === 0) await tick(0);
+    while (ve.encodeQueueSize > 10 && !encErr && !job.abort) await tick(8);
+  }
+  if (encErr || job.abort) { try { ve.close(); } catch (_) { /* 이미 닫힘 */ } if (encErr) throw encErr; return null; }
+  await ve.flush(); ve.close(); muxer.finalize();
+  return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+}
+// 위 방식을 못 쓰는 브라우저용: 재생하면서 실시간으로 녹화
+function recordRealtime(w, h, job) {
+  return new Promise((resolve, reject) => {
+    if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) { reject(new Error('녹화 기능 없음')); return; }
+    const mime = ['video/mp4;codecs=avc1.640028', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+    if (!mime) { reject(new Error('지원 형식 없음')); return; }
+    const stream = canvas.captureStream(FPS);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.round(w * h * FPS * 0.22) });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onerror = e => reject(e.error || new Error('녹화 실패'));
+    rec.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      resolve(job.abort ? null : { blob: new Blob(chunks, { type: mime.split(';')[0] }), ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' });
+    };
+    const dur = state.duration;
+    drawExportFrame(0, w, h); rec.start();
+    const t0 = performance.now();
+    const step = () => {
+      const t = (performance.now() - t0) / 1000;
+      drawExportFrame(Math.min(t, dur), w, h);
+      setProgress(Math.min(t, dur), dur, `실시간 녹화 중 ${Math.min(t, dur).toFixed(1)} / ${dur}초. 이 화면을 켜 두세요.`);
+      if (t < dur + 0.15 && !job.abort) requestAnimationFrame(step); else rec.stop();
+    };
+    requestAnimationFrame(step);
+  });
+}
+async function runExport() {
+  if (exporting) return;
+  const [w, h] = $('#ex-res').value.split('x').map(Number);
+  const total = Math.round(state.duration * FPS) + 1;
+  const job = exportJob = { abort: false }, savedTime = time;
+  exporting = true; $('#rec-flag').hidden = false; showEx('progress'); setProgress(0, total, '준비 중');
+  renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+  let result = null;
+  try {
+    const enc = await pickEncoder(w, h);
+    if (enc) {
+      try { const blob = await encodeFrames(enc, w, h, total, job); if (blob) result = { blob, ext: 'mp4' }; }
+      catch (err) { console.warn('프레임 인코딩 실패, 실시간 녹화로 전환', err); if (!job.abort) result = await recordRealtime(w, h, job); }
+    } else result = await recordRealtime(w, h, job);
+  } catch (err) {
+    console.error(err); result = null;
+    if (!job.abort) toast('영상을 만들지 못했습니다. 해상도를 낮춰 다시 시도해 주세요.');
+  } finally {
+    exporting = false; $('#rec-flag').hidden = true; time = savedTime; resize(); mark('ui');
+  }
+  if (job.abort || !result || !result.blob || !result.blob.size) { showEx('setup'); return; }
+  exportBlob = result.blob; exportExt = result.ext;
+  if (exportUrl) URL.revokeObjectURL(exportUrl);
+  exportUrl = URL.createObjectURL(exportBlob);
+  const v = $('#ex-video'); v.hidden = false; v.src = exportUrl; v.play().catch(() => { /* 자동 재생이 막힌 경우 */ });
+  $('#ex-info').textContent = `${w} × ${h} · ${state.duration}초 · ${FPS}fps · ${(exportBlob.size / 1048576).toFixed(1)}MB · ${exportExt.toUpperCase()}`;
+  showEx('done');
+}
+// 지금 시간의 한 장면을 카메라 화면 그대로 PNG로 저장
+async function exportImage() {
+  if (exporting) return;
+  const [w, h] = $('#ex-res').value.split('x').map(Number);
+  exporting = true;
+  let blob = null;
+  try {
+    renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+    drawExportFrame(time, w, h);
+    blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  } catch (err) { console.error(err); }
+  finally { exporting = false; resize(); mark('ui'); }
+  if (blob && blob.size) saveFile(`hexa-previs-${tc(time).replace(/:/g, '')}.png`, blob);
+  else toast('이미지를 만들지 못했습니다. 해상도를 낮춰 다시 시도해 주세요.');
+}
+$('#ex-image').addEventListener('click', exportImage);
+$('#ex-video').addEventListener('error', e => { e.target.hidden = true; });
+$('#btn-export').addEventListener('click', openExport);
+$('#ex-cancel').addEventListener('click', closeExport);
+$('#ex-close').addEventListener('click', closeExport);
+$('#ex-start').addEventListener('click', runExport);
+$('#ex-abort').addEventListener('click', () => { if (exportJob) exportJob.abort = true; });
+$('#ex-save').addEventListener('click', () => { if (exportBlob) saveFile('hexa-previs.' + exportExt, exportBlob); });
+
+/* ---------- 매 프레임 ---------- */
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (exporting || !state) return;
+  if (playing) {
+    let t = (now - playT0) / 1000;
+    if (t >= state.duration) {
+      if ($('#chk-loop').checked) { playT0 = now; t = 0; }
+      else { t = state.duration; playing = false; }
+    }
+    time = Math.max(0, t); dirty.ui = dirty.render = true;
+  }
+  if (!dirty.render) return;
+  if (dirty.struct) { syncStructure(); dirty.tl = dirty.paths = dirty.ui = true; }
+  if (dirty.panel) { buildPanel(); dirty.ui = true; }
+  if (dirty.tl) buildTimeline();
+  if (dirty.paths) rebuildPaths();
+  applyTime(time);
+  if (dirty.ui) syncUI();
+  renderView();
+  dirty.struct = dirty.panel = dirty.tl = dirty.paths = dirty.ui = dirty.render = false;
+}
+
+/* ---------- 시작 ---------- */
+function start(data) {
+  let init = null;
+  if (data && data.project) { try { init = normalize(data.project); } catch (_) { init = null; } }
+  if (!init) { try { const j = localStorage.getItem(STORE_KEY); if (j) init = normalize(JSON.parse(j)); } catch (_) { init = null; } }
+  state = init || sampleScene();
+  undoStack = [JSON.stringify(state)]; redoStack = [];
+  if (data && typeof data.time === 'number') time = clamp(snapT(data.time), 0, state.duration);
+  if (data && (data.view === 'cam' || data.view === 'edit')) view = data.view;
+  resize(); mark('struct', 'panel');
+  requestAnimationFrame(frame);
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {
+  if (!state) return;
+  for (const a of state.actors) { const v = vis.get(a.id); if (v) { if (v.numMat.map) v.numMat.map.dispose(); v.numMat.map = numTexture(a.num); v.numMat.needsUpdate = true; } }
+  mark();
+});
+// 페이지가 새로 게시돼도 열어 둔 작업이 이어지게 한다
+const hot = window.claude && window.claude.hot;
+try { if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ project: state, time, view })); } catch (_) { /* 뷰어 밖 */ }
+if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot && hot.data) || {});
+})();
+
+</script>
+
+</body></html>
