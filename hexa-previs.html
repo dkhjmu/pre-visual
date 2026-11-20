@@ -112,7 +112,8 @@ h1,h2,h3,p{margin:0}
 .xy{display:flex;align-items:center;gap:6px;min-width:0}
 .xy span{font:500 11px var(--font-mono);color:var(--muted)}
 input[type="range"]{width:100%;margin:0;accent-color:var(--accent)}
-input[type="text"],input[type="number"],select{width:100%;min-width:0;border:1px solid var(--line);background:var(--raised);border-radius:6px;padding:5px 8px}
+input[type="text"],input[type="number"],input[type="color"],select{width:100%;min-width:0;border:1px solid var(--line);background:var(--raised);border-radius:6px;padding:5px 8px}
+input[type="color"]{height:31px;padding:3px;cursor:pointer}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip-toggle{appearance:none;border:1px dashed var(--muted);background:none;border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--muted)}
 .chip-toggle:hover{color:var(--fg)}
@@ -290,7 +291,12 @@ const FPS = 24, EPS = 0.5 / FPS, D2R = Math.PI / 180;
 const TAPE = ['#E5484D', '#F2B705', '#30A46C', '#F2762E', '#D864C5', '#12A5B5', '#8E6CEF', '#A3B018'];
 const CLAY = '#9BA2AA';
 const STORE_KEY = 'hexa-previs:v1';
-const LENSES = [24, 35, 50, 85];
+const LENSES = [
+  { id: 'fisheye', name: '어안', tip: '약 160° 화각과 배럴 왜곡' },
+  { id: 24, name: '24mm' }, { id: 35, name: '35mm' }, { id: 50, name: '50mm' }, { id: 85, name: '85mm' },
+];
+const lensValid = v => v === 'fisheye' || [24, 35, 50, 85].includes(v);
+const lensName = v => v === 'fisheye' ? '어안' : `${v}mm`;
 // 카메라 화면 비율과 그 비율로 내보낼 수 있는 해상도 (첫 번째가 기본)
 const ASPECTS = [
   { id: '16:9', hint: '가로 영상', r: 16 / 9, res: [[1280, 720], [1920, 1080], [854, 480]] },
@@ -409,8 +415,10 @@ const lerpAngle = (a, b, u) => a + (((b - a + 540) % 360) - 180) * u;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const newId = () => 'a' + Math.random().toString(36).slice(2, 8);
 const newBoxId = () => 'b' + Math.random().toString(36).slice(2, 8);
+const newLightId = () => 'l' + Math.random().toString(36).slice(2, 8);
 // 세로 화각. 화면의 긴 쪽을 36mm 센서로 본다 (가로 화면은 가로가, 세로 화면은 세로가 36mm)
 const lensFov = (mm, r = 16 / 9) => 2 * Math.atan((r >= 1 ? 36 / r : 36) / (2 * mm)) / D2R;
+const cameraFov = (lens, r = 16 / 9, fishFov = 130) => lens === 'fisheye' ? clamp(fishFov, 100, 170) : lensFov(lens, r);
 const pad = n => String(n).padStart(2, '0');
 function tc(t) {
   const f = Math.round(t * FPS), s = Math.floor(f / FPS);
@@ -426,7 +434,9 @@ function sampleScene() {
   return {
     v: 1, sample: true, duration: 8,
     out: { numbers: true, tape: false, grid: true },
-    camera: { ease: true, arc: true, lens: 35, aspect: '16:9', keys: [
+    room: { enabled: false, w: 8, d: 10, h: 3, tone: 'light', ceiling: true },
+    lighting: { ambient: 0.62, sun: 0.45 }, lights: [],
+    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 0.55, aspect: '16:9', keys: [
       { t: 0, pos: [0.5, 1.55, 9], tgt: [0, 1.1, 1] },
       { t: 8, pos: [2.2, 1.5, 5.2], tgt: [1.1, 1.2, 1] },
     ] },
@@ -448,7 +458,9 @@ function blankScene() {
   return {
     v: 1, sample: false, duration: 8,
     out: { numbers: true, tape: false, grid: true },
-    camera: { ease: true, arc: true, lens: 35, aspect: '16:9', keys: [{ t: 0, pos: [0, 1.55, 8], tgt: [0, 1.1, 0] }] },
+    room: { enabled: false, w: 8, d: 10, h: 3, tone: 'light', ceiling: true },
+    lighting: { ambient: 0.62, sun: 0.45 }, lights: [],
+    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 0.55, aspect: '16:9', keys: [{ t: 0, pos: [0, 1.55, 8], tgt: [0, 1.1, 0] }] },
     actors: [{ id: newId(), num: 1, name: '', color: TAPE[0], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: false, legs: false }, autoWalk: true, keys: [newKey(0, 0, 0, 0)] }],
     boxes: [],
   };
@@ -493,12 +505,29 @@ function normalize(o) {
       w: sz('w'), h: sz('h'), d: sz('d'), tone: toneOf(b.tone).id, lock: !!b.lock,
     };
   }).sort((p, q) => p.num - q.num);
+  const room0 = o.room || {}, lighting0 = o.lighting || {};
+  const room = {
+    enabled: !!room0.enabled, w: r2(clamp(num(room0.w, 8), 2, 30)), d: r2(clamp(num(room0.d, 10), 2, 40)),
+    h: r2(clamp(num(room0.h, 3), 2, 12)), tone: toneOf(room0.tone).id, ceiling: room0.ceiling !== false,
+  };
+  const lighting = { ambient: clamp(num(lighting0.ambient, 0.62), 0, 2), sun: clamp(num(lighting0.sun, 0.45), 0, 2) };
+  const usedLightId = new Set(usedId);
+  const lights = (Array.isArray(o.lights) ? o.lights : []).filter(l => l && typeof l === 'object').slice(0, 12).map((l, idx) => {
+    let id = (typeof l.id === 'string' && /^[A-Za-z0-9]{1,16}$/.test(l.id) && !usedLightId.has(l.id)) ? l.id : newLightId(); usedLightId.add(id);
+    const pos = v3(l.pos, [0, 2.4, 2]), tgt = v3(l.tgt, [0, 1, 0]);
+    pos[1] = clamp(pos[1], 0.05, 20); tgt[1] = clamp(tgt[1], 0, 20);
+    return { id, num: idx + 1, name: typeof l.name === 'string' ? l.name.slice(0, 24) : '', type: l.type === 'point' ? 'point' : 'spot',
+      color: /^#[0-9a-fA-F]{6}$/.test(l.color) ? l.color : '#fff1d6', intensity: clamp(num(l.intensity, 1.4), 0, 5),
+      distance: clamp(num(l.distance, 12), 1, 50), angle: clamp(num(l.angle, 45), 8, 85), enabled: l.enabled !== false, pos, tgt };
+  });
   const out = o.out || {};
   return {
     v: 1, sample: !!o.sample, duration: clamp(Math.round(num(o.duration, 8)), 1, 120),
     out: { numbers: out.numbers !== false, tape: !!out.tape, grid: out.grid !== false },
-    camera: { ease: o.camera.ease !== false, arc: o.camera.arc !== false, lens: LENSES.includes(o.camera.lens) ? o.camera.lens : 35, aspect: ASPECTS.some(a => a.id === o.camera.aspect) ? o.camera.aspect : '16:9', keys: ckeys },
-    actors, boxes,
+    camera: { ease: o.camera.ease !== false, arc: o.camera.arc !== false, lens: lensValid(o.camera.lens) ? o.camera.lens : 35,
+      fishFov: clamp(num(o.camera.fishFov, 130), 100, 170), fishStrength: clamp(num(o.camera.fishStrength, 0.55), 0, 1),
+      aspect: ASPECTS.some(a => a.id === o.camera.aspect) ? o.camera.aspect : '16:9', keys: ckeys },
+    actors, boxes, room, lighting, lights,
   };
 }
 
@@ -512,6 +541,8 @@ const actorById = id => state.actors.find(a => a.id === id) || null;
 const selActor = () => (sel && sel !== 'cam') ? actorById(sel) : null;
 const boxById = id => state.boxes.find(b => b.id === id) || null;
 const selBox = () => (sel && sel !== 'cam') ? boxById(sel) : null;
+const lightById = id => state.lights.find(l => l.id === id) || null;
+const selLight = () => (sel && sel !== 'cam') ? lightById(sel) : null;
 const trackKeys = track => track === 'cam' ? state.camera.keys : ((actorById(track) || { keys: [] }).keys);
 
 // 키 사이 구간 찾기: [앞 키, 뒤 키, 진행도, 구간 번호]
@@ -642,7 +673,7 @@ function commit(keepSample) {
 }
 function restore(json) {
   state = JSON.parse(json); setPlaying(false); time = clamp(time, 0, state.duration);
-  if (sel && sel !== 'cam' && !actorById(sel) && !boxById(sel)) sel = null;
+  if (sel && sel !== 'cam' && !actorById(sel) && !boxById(sel) && !lightById(sel)) sel = null;
   resetVisuals(); persist(json); mark('struct', 'panel');
 }
 function undo() { if (undoStack.length < 2) return; redoStack.push(undoStack.pop()); restore(undoStack[undoStack.length - 1]); }
@@ -666,7 +697,7 @@ const BG = '#C6CBD1', STAGE_DARK = '#11161C';
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(BG);
 scene.fog = new THREE.Fog(BG, 35, 110);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8f969e, 0.62));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8f969e, 0.62); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.45);
 sun.position.set(7, 14, 6); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -793,6 +824,7 @@ function makeBoxVisual(b) {
 function resetVisuals() {
   for (const v of vis.values()) disposeVisual(v); vis.clear();
   for (const v of boxVis.values()) scene.remove(v.mesh); boxVis.clear();
+  for (const v of lightVis.values()) disposeLightVisual(v); lightVis.clear();
 }
 
 // 카메라 표시(배치 화면에서만 보임)
@@ -813,6 +845,52 @@ camPath.layers.set(1); camDots.layers.set(1); camPath.frustumCulled = camDots.fr
 const camAim = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#27313C' }));
 camAim.geometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.18, 0, 0, 0.18, 0, 0, 0, -0.18, 0, 0, 0.18, 0, 0, 0, -0.18, 0, 0, 0.18], 3));
 camAim.layers.set(1); scene.add(camAim);
+
+// 실내 세트: 앞면은 열어 두어 배치 화면에서 방 안을 쉽게 볼 수 있다.
+const roomGroup = new THREE.Group(), ROOM_GEO = new THREE.PlaneGeometry(1, 1);
+const roomMat = new THREE.MeshStandardMaterial({ color: TONES[0].face, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+const roomPart = () => { const m = new THREE.Mesh(ROOM_GEO, roomMat); m.receiveShadow = true; roomGroup.add(m); return m; };
+const roomFloor = roomPart(), roomCeil = roomPart(), roomBack = roomPart(), roomLeft = roomPart(), roomRight = roomPart();
+roomFloor.rotation.x = -Math.PI / 2; roomCeil.rotation.x = Math.PI / 2;
+roomBack.rotation.y = Math.PI; roomLeft.rotation.y = Math.PI / 2; roomRight.rotation.y = -Math.PI / 2;
+scene.add(roomGroup);
+
+// 사용자 조명과 배치 화면 전용 조명 표시.
+const lightVis = new Map(), LIGHT_BULB_GEO = new THREE.SphereGeometry(0.13, 12, 8);
+function makeLightVisual(l) {
+  const actual = l.type === 'point' ? new THREE.PointLight(l.color, l.intensity, l.distance, 2) : new THREE.SpotLight(l.color, l.intensity, l.distance, Math.PI / 4, 0.35, 2);
+  const target = new THREE.Object3D(); if (actual.isSpotLight) actual.target = target;
+  const mat = new THREE.MeshBasicMaterial({ color: l.color }), bulb = new THREE.Mesh(LIGHT_BULB_GEO, mat); bulb.userData.light = l.id; bulb.layers.set(1);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.25, 16), new THREE.MeshBasicMaterial({ color: l.color, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.layers.set(1);
+  const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: l.color })); line.layers.set(1);
+  scene.add(actual, target, bulb, ring, line);
+  return { kind: l.type, actual, target, bulb, ring, line, mat };
+}
+function disposeLightVisual(v) {
+  scene.remove(v.actual, v.target, v.bulb, v.ring, v.line);
+  v.mat.dispose(); v.ring.geometry.dispose(); v.ring.material.dispose(); v.line.geometry.dispose(); v.line.material.dispose();
+}
+
+// 어안 렌즈 후처리. 카메라 화면과 이미지·영상 내보내기에 같은 왜곡을 적용한다.
+let fishTarget = null;
+const fishScene = new THREE.Scene(), fishCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const fishMat = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, maxTheta: { value: 1.13446 }, strength: { value: 0.55 } }, vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}', fragmentShader: `
+  uniform sampler2D tDiffuse; uniform float maxTheta; uniform float strength; varying vec2 vUv;
+  void main(){
+    vec2 p=vUv*2.0-1.0; float r=length(p); if(r>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}
+    float sr=tan(r*maxTheta)/tan(maxTheta); float rr=mix(r,sr,clamp(strength,0.0,1.0));
+    vec2 q=r>0.0001?p*(rr/r):p; vec2 uv=q*0.5+0.5;
+    if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){gl_FragColor=vec4(0.0,0.0,0.0,1.0);return;}
+    vec4 c=texture2D(tDiffuse,uv); c.rgb*=1.0-smoothstep(0.72,1.0,r)*0.22; gl_FragColor=c;
+  }` });
+fishScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fishMat));
+function ensureFishTarget(w, h) {
+  w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
+  if (!fishTarget) fishTarget = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
+  else if (fishTarget.width !== w || fishTarget.height !== h) fishTarget.setSize(w, h);
+  return fishTarget;
+}
 
 function syncStructure() {
   const ids = new Set(state.actors.map(a => a.id));
@@ -867,6 +945,27 @@ function syncStructure() {
     v.hi.visible = sel === b.id;
     pickables.push(v.mesh);   // 고정된 상자도 넣는다: 뒤에 가린 배우가 잡히지 않게
   }
+  const lids = new Set(state.lights.map(l => l.id));
+  for (const [id, v] of lightVis) if (!lids.has(id)) { disposeLightVisual(v); lightVis.delete(id); }
+  for (const l of state.lights) {
+    let v = lightVis.get(l.id);
+    if (!v || v.kind !== l.type) { if (v) disposeLightVisual(v); v = makeLightVisual(l); lightVis.set(l.id, v); }
+    v.actual.color.set(l.color); v.actual.intensity = l.enabled ? l.intensity : 0; v.actual.distance = l.distance;
+    if (v.actual.isSpotLight) { v.actual.angle = l.angle * D2R; v.actual.penumbra = 0.35; }
+    v.actual.position.fromArray(l.pos); v.target.position.fromArray(l.tgt); v.bulb.position.fromArray(l.pos); v.ring.position.set(l.pos[0], 0.015, l.pos[2]);
+    v.mat.color.set(l.color); v.ring.material.color.set(l.color); v.line.material.color.set(l.color);
+    v.bulb.scale.setScalar(sel === l.id ? 1.35 : 1); v.ring.scale.setScalar(sel === l.id ? 1.25 : 1); v.bulb.visible = v.ring.visible = v.line.visible = l.enabled;
+    v.line.geometry.dispose(); v.line.geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3().fromArray(l.pos), new THREE.Vector3().fromArray(l.tgt)]);
+    pickables.push(v.bulb);
+  }
+  hemi.intensity = state.lighting.ambient; sun.intensity = state.lighting.sun;
+  const Rm = state.room, rw = Rm.w / 2, rd = Rm.d / 2;
+  roomGroup.visible = Rm.enabled; roomMat.color.set(toneOf(Rm.tone).face); ground.visible = !Rm.enabled;
+  roomFloor.position.set(0, 0.006, 0); roomFloor.scale.set(Rm.w, Rm.d, 1);
+  roomCeil.visible = Rm.ceiling; roomCeil.position.set(0, Rm.h, 0); roomCeil.scale.set(Rm.w, Rm.d, 1);
+  roomBack.position.set(0, Rm.h / 2, -rd); roomBack.scale.set(Rm.w, Rm.h, 1);
+  roomLeft.position.set(-rw, Rm.h / 2, 0); roomLeft.scale.set(Rm.d, Rm.h, 1);
+  roomRight.position.set(rw, Rm.h / 2, 0); roomRight.scale.set(Rm.d, Rm.h, 1);
   grid.visible = state.out.grid;
 }
 function rebuildPaths() {
@@ -925,7 +1024,7 @@ function applyTime(t) {
   const c = sampleCam(t);
   shotCam.position.fromArray(c.pos); shotCam.lookAt(c.tgt[0], c.tgt[1], c.tgt[2]);
   camGizmo.position.fromArray(c.pos); camGizmo.lookAt(c.tgt[0], c.tgt[1], c.tgt[2]); camAim.position.fromArray(c.tgt);
-  const sr = shotRatio(), th = Math.tan(lensFov(state.camera.lens, sr) * D2R / 2), d = 1.0;
+  const sr = shotRatio(), th = Math.tan(Math.min(150, cameraFov(state.camera.lens, sr, state.camera.fishFov)) * D2R / 2), d = 1.0;
   frustum.scale.set(d * th * sr, d * th, d);
   const cp = Math.cos(orbit.pitch);
   editCam.position.set(orbit.tx + orbit.dist * cp * Math.sin(orbit.yaw), orbit.ty + orbit.dist * Math.sin(orbit.pitch), orbit.tz + orbit.dist * cp * Math.cos(orbit.yaw));
@@ -938,27 +1037,35 @@ const shotRatio = () => shotAspect().r;
 const camRect = (W, H) => { const r = shotRatio(), w = Math.min(W, H * r), h = w / r; return { x: (W - w) / 2, y: (H - h) / 2, w, h }; };
 const pipRect = (W, H) => { const r = shotRatio(), w = Math.min(clamp(W * 0.3, 150, 300), clamp(H * 0.5, 110, 300) * r), h = w / r; return { x: W - w - 12, y: H - h - 12, w, h }; };
 function prepShot(aspect, output) {
-  shotCam.aspect = aspect; shotCam.fov = lensFov(state.camera.lens, shotRatio()); shotCam.updateProjectionMatrix();
+  shotCam.aspect = aspect; shotCam.fov = cameraFov(state.camera.lens, shotRatio(), state.camera.fishFov); shotCam.updateProjectionMatrix();
   if (output && !state.out.numbers) shotCam.layers.disable(2); else shotCam.layers.enable(2);
 }
 function setVP(r, H) { renderer.setViewport(r.x, H - r.y - r.h, r.w, r.h); renderer.setScissor(r.x, H - r.y - r.h, r.w, r.h); }
+function renderShot(r, H, output) {
+  prepShot(r.w / r.h, output);
+  if (state.camera.lens !== 'fisheye') { setVP(r, H); renderer.render(scene, shotCam); return; }
+  const rt = ensureFishTarget(r.w, r.h);
+  fishMat.uniforms.maxTheta.value = state.camera.fishFov * D2R / 2; fishMat.uniforms.strength.value = state.camera.fishStrength;
+  renderer.setRenderTarget(rt); renderer.setScissorTest(false); renderer.setViewport(0, 0, rt.width, rt.height); renderer.setClearColor(BG, 1); renderer.clear(); renderer.render(scene, shotCam);
+  renderer.setRenderTarget(null); renderer.setScissorTest(true); fishMat.uniforms.tDiffuse.value = rt.texture; setVP(r, H); renderer.render(fishScene, fishCam);
+}
 function renderView() {
   const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
   renderer.setScissorTest(true);
   if (view === 'edit') {
     editCam.aspect = W / H; editCam.updateProjectionMatrix();
     setVP({ x: 0, y: 0, w: W, h: H }, H); renderer.render(scene, editCam);
-    prepShot(shotRatio(), true); setVP(pipRect(W, H), H); renderer.render(scene, shotCam);
+    renderShot(pipRect(W, H), H, true);
   } else {
     renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
     renderer.setClearColor(STAGE_DARK, 1); renderer.clear();
     renderer.setScissorTest(true);
-    prepShot(shotRatio(), true); setVP(camRect(W, H), H); renderer.render(scene, shotCam);
+    renderShot(camRect(W, H), H, true);
   }
 }
 function drawExportFrame(t, w, h) {
   applyTime(t); renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h);
-  prepShot(w / h, true); renderer.render(scene, shotCam);
+  renderShot({ x: 0, y: 0, w, h }, h, true);
 }
 function resize() {
   const W = stage.clientWidth, H = stage.clientHeight; if (!W || !H) return;
@@ -989,7 +1096,7 @@ function setView(v) {
 }
 
 /* ---------- 무대 조작 ---------- */
-const ray = new THREE.Raycaster(), v2 = new THREE.Vector2(), v3a = new THREE.Vector3();
+const ray = new THREE.Raycaster(), v2 = new THREE.Vector2(), v3a = new THREE.Vector3(); ray.layers.enable(1);
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), UP = new THREE.Vector3(0, 1, 0);
 const activeCam = () => view === 'edit' ? editCam : shotCam;
 function ndc(e) {
@@ -1006,6 +1113,7 @@ function pick(e) {
   if (!hits.length) return null;
   const h = hits[0], u = h.object.userData;
   if (u.actor) { const a = actorById(u.actor); return a ? { kind: 'actor', item: a } : null; }
+  if (u.light) { const l = lightById(u.light); return l && view === 'edit' ? { kind: 'light', item: l, point: h.point } : null; }
   const b = u.box ? boxById(u.box) : null;
   return (b && !b.lock && view === 'edit') ? { kind: 'box', item: b, point: h.point } : null;
 }
@@ -1044,7 +1152,7 @@ function panBy(dx, dy) {
     const f = new THREE.Vector3(c.tgt[0] - c.pos[0], c.tgt[1] - c.pos[1], c.tgt[2] - c.pos[2]);
     const dist = f.length(); f.normalize();
     const r = new THREE.Vector3().crossVectors(f, UP).normalize(), u = new THREE.Vector3().crossVectors(r, f);
-    const s = 2 * dist * Math.tan(lensFov(state.camera.lens, shotRatio()) * D2R / 2) / camRect(stage.clientWidth, stage.clientHeight).h;
+    const s = 2 * dist * Math.tan(Math.min(150, cameraFov(state.camera.lens, shotRatio(), state.camera.fishFov)) * D2R / 2) / camRect(stage.clientWidth, stage.clientHeight).h;
     const d = r.multiplyScalar(-dx * s).add(u.multiplyScalar(dy * s)).toArray();
     for (let i = 0; i < 3; i++) { c.pos[i] += d[i]; c.tgt[i] += d[i]; }
   });
@@ -1060,7 +1168,7 @@ function zoomBy(f) {
 
 const ptrs = new Map(); let gest = null;
 function finishGesture() {
-  if (gest && gest.moved && (gest.mode === 'actor' || gest.mode === 'box' || view === 'cam')) commit();
+  if (gest && gest.moved && (gest.mode === 'actor' || gest.mode === 'box' || gest.mode === 'light' || view === 'cam')) commit();
   gest = null;
 }
 canvas.addEventListener('pointerdown', e => {
@@ -1085,6 +1193,9 @@ canvas.addEventListener('pointerdown', e => {
     const b = hit.item, py = Math.max(0, hit.point.y), g = groundPoint(e, py);
     select(b.id);
     gest = { mode: 'box', id: b.id, py, ox: g ? b.x - g.x : 0, oz: g ? b.z - g.z : 0, moved: false, sx: e.clientX, sy: e.clientY };
+  } else if (hit && hit.kind === 'light') {
+    const l = hit.item, py = l.pos[1], g = groundPoint(e, py); select(l.id);
+    gest = { mode: 'light', id: l.id, py, ox: g ? l.pos[0] - g.x : 0, oz: g ? l.pos[2] - g.z : 0, moved: false, sx: e.clientX, sy: e.clientY };
   } else {
     gest = { mode: (e.button !== 0 || e.shiftKey) ? 'pan' : 'orbit', moved: false, sx: e.clientX, sy: e.clientY, primary: e.button === 0 && !e.shiftKey };
     if (view === 'cam') setPlaying(false);
@@ -1112,6 +1223,10 @@ canvas.addEventListener('pointermove', e => {
     const b = boxById(gest.id), g = groundPoint(e, gest.py); if (!b || !g) return;
     b.x = r2(clamp(g.x + gest.ox, -BOX_LIM, BOX_LIM)); b.z = r2(clamp(g.z + gest.oz, -BOX_LIM, BOX_LIM));
     mark('ui');
+  } else if (gest.mode === 'light') {
+    const l = lightById(gest.id), g = groundPoint(e, gest.py); if (!l || !g) return;
+    l.pos[0] = r2(clamp(g.x + gest.ox, -BOX_LIM, BOX_LIM)); l.pos[2] = r2(clamp(g.z + gest.oz, -BOX_LIM, BOX_LIM));
+    mark('struct', 'ui');
   } else if (gest.mode === 'orbit') orbitBy(dx, dy);
   else panBy(dx, dy);
 });
@@ -1178,7 +1293,9 @@ function actorInspector(a) {
 }
 function camInspector() {
   let h = '<section class="sec"><div class="insp-head"><span class="camchip">CAM</span><h3>카메라</h3><span class="keystate" id="keystate"></span></div>';
-  h += '<div class="field name"><span class="note">렌즈</span><div class="seg" role="group" aria-label="렌즈">' + LENSES.map(l => `<button type="button" data-lens="${l}" aria-pressed="${state.camera.lens === l}">${l}mm</button>`).join('') + '</div></div>';
+  h += '<div class="stack-s"><span class="note">렌즈</span><div class="seg" role="group" aria-label="렌즈">' + LENSES.map(l => `<button type="button" data-lens="${l.id}" title="${l.tip || ''}" aria-pressed="${state.camera.lens === l.id}">${l.name}</button>`).join('') + '</div></div>';
+  if (state.camera.lens === 'fisheye') h += rangeField('f-fishfov', '어안 화각', 100, 170, 1) + rangeField('f-fishstrength', '왜곡 강도', 0, 1, 0.05)
+    + '<p class="note">화각과 왜곡을 따로 조절합니다. 기본값은 130°·0.55이며, 왜곡 0은 초광각 원근만 남깁니다. 카메라 화면, 이미지, 영상에 같은 값이 적용됩니다.</p>';
   const asp = shotAspect();
   h += `<div class="stack-s"><span class="note">화면 비율 · ${asp.hint}</span><div class="seg" role="group" aria-label="화면 비율">` + ASPECTS.map(a => `<button type="button" data-aspect="${a.id}" title="${a.hint}" aria-pressed="${a.id === asp.id}">${a.id}</button>`).join('') + '</div></div>';
   h += `<label class="check" for="f-ease"><input type="checkbox" id="f-ease"${state.camera.ease ? ' checked' : ''}> 첫 키에서 부드럽게 출발, 마지막 키에서 부드럽게 멈춤</label>`;
@@ -1221,18 +1338,62 @@ function boxInspector(b) {
   h += '<section class="sec"><div class="rowbtns"><button type="button" class="btn" id="btn-dup-box">옆에 복제</button><button type="button" class="btn danger" id="btn-del-box">상자 삭제</button></div></section>';
   return h;
 }
+const lightMeta = l => `${l.type === 'point' ? '포인트' : '스폿'} · ${+l.intensity.toFixed(1)}`;
+function lightList() {
+  let h = '<section class="sec"><h2>조명</h2>';
+  if (state.lights.length) {
+    h += '<ul class="cast">';
+    for (const l of state.lights) h += `<li><button type="button" class="cast-row${sel === l.id ? ' on' : ''}" data-sel="${l.id}"><span class="boxchip" style="--c:${l.color}">${l.num}</span><span class="nm${l.name ? '' : ' empty'}">${l.name ? esc(l.name) : '조명 ' + l.num}</span><span class="meta">${lightMeta(l)}</span></button></li>`;
+    h += '</ul>';
+  } else h += '<p class="note">포인트 조명이나 방향을 가진 스폿 조명을 배치할 수 있습니다.</p>';
+  return h + '<div class="rowbtns"><button type="button" class="btn" id="btn-add-light">+ 조명 추가</button><button type="button" class="btn" id="btn-light-rig">3점 조명</button></div></section>';
+}
+function lightInspector(l) {
+  let h = `<section class="sec"><div class="insp-head"><span class="boxchip" style="--c:${l.color}">${l.num}</span><h3>조명 ${l.num}</h3></div>`;
+  h += `<div class="field name"><label for="f-lname">이름</label><input type="text" id="f-lname" maxlength="24" value="${esc(l.name)}" placeholder="예: 키 라이트"></div>`;
+  h += `<label class="check" for="f-lenabled"><input type="checkbox" id="f-lenabled"${l.enabled ? ' checked' : ''}> 조명 켜기</label>`;
+  h += '<div class="field name"><span class="note">종류</span><div class="seg" role="group" aria-label="조명 종류">'
+    + `<button type="button" data-lighttype="spot" aria-pressed="${l.type === 'spot'}">스폿</button><button type="button" data-lighttype="point" aria-pressed="${l.type === 'point'}">포인트</button></div></div>`;
+  h += `<div class="field name"><label for="f-lcolor">색상</label><input type="color" id="f-lcolor" value="${l.color}"></div>`;
+  h += `<div class="field two"><label>위치 (m)</label><div class="xy"><span>X</span><input type="number" id="f-lx" step="0.1" value="${l.pos[0]}"></div><div class="xy"><span>Z</span><input type="number" id="f-lz" step="0.1" value="${l.pos[2]}"></div></div>`;
+  h += numField('f-ly', '높이 (Y)', 0.05, 20, 0.1);
+  h += rangeField('f-lintensity', '밝기', 0, 5, 0.05) + rangeField('f-ldistance', '범위', 1, 50, 0.5);
+  if (l.type === 'spot') {
+    h += rangeField('f-langle', '퍼짐 각도', 8, 85, 1);
+    h += `<div class="field two"><label>바라보는 곳</label><div class="xy"><span>X</span><input type="number" id="f-ltx" step="0.1" value="${l.tgt[0]}"></div><div class="xy"><span>Z</span><input type="number" id="f-ltz" step="0.1" value="${l.tgt[2]}"></div></div>`;
+    h += numField('f-lty', '목표 높이', 0, 20, 0.1);
+  }
+  return h + '<p class="note">배치 화면에서 전구 표시를 끌어 X·Z 위치를 옮길 수 있습니다.</p><div class="rowbtns"><button type="button" class="btn" id="btn-dup-light">복제</button><button type="button" class="btn danger" id="btn-del-light">조명 삭제</button></div></section>';
+}
+function studioPanel() {
+  const r = state.room, g = state.lighting;
+  let h = '<section class="sec"><h2>실내 세트 · 기본광</h2>';
+  h += `<label class="check" for="f-room"><input type="checkbox" id="f-room"${r.enabled ? ' checked' : ''}> 실내 세트 사용</label>`;
+  if (r.enabled) {
+    h += `<div class="field two"><label>방 크기</label><div class="xy"><span>W</span><input type="number" id="f-rw" min="2" max="30" step="0.1" value="${r.w}"></div><div class="xy"><span>D</span><input type="number" id="f-rd" min="2" max="40" step="0.1" value="${r.d}"></div></div>`;
+    h += numField('f-rh', '천장 높이', 2, 12, 0.1);
+    h += `<label class="check" for="f-rceiling"><input type="checkbox" id="f-rceiling"${r.ceiling ? ' checked' : ''}> 천장 표시</label>`;
+    h += '<div class="field name"><span class="note">벽 밝기</span><div class="seg" role="group" aria-label="실내 벽 밝기">' + TONES.map(t => `<button type="button" data-roomtone="${t.id}" aria-pressed="${r.tone === t.id}">${t.name}</button>`).join('') + '</div></div>';
+    h += '<p class="note">앞쪽 벽은 열려 있어 배치 카메라가 방 안을 보기 쉽습니다.</p>';
+  }
+  h += rangeField('f-ambient', '환경광', 0, 2, 0.02) + rangeField('f-sun', '기본 방향광', 0, 2, 0.02);
+  return h + '</section>';
+}
 function buildPanel() {
-  const A = selActor(), B = selBox(), o = state.out;
+  const A = selActor(), B = selBox(), L = selLight(), o = state.out;
   let h = '<section class="sec"><h2>출연</h2><ul class="cast">';
-  h += `<li><button type="button" class="cast-row${sel === 'cam' ? ' on' : ''}" data-sel="cam"><span class="camchip">CAM</span><span class="nm">카메라</span><span class="meta">${state.camera.lens}mm · ${shotAspect().id}</span></button></li>`;
+  h += `<li><button type="button" class="cast-row${sel === 'cam' ? ' on' : ''}" data-sel="cam"><span class="camchip">CAM</span><span class="nm">카메라</span><span class="meta">${lensName(state.camera.lens)} · ${shotAspect().id}</span></button></li>`;
   for (const a of state.actors)
     h += `<li><button type="button" class="cast-row${sel === a.id ? ' on' : ''}" data-sel="${a.id}"><span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span><span class="meta">${limbsLabel(a)}</span></button></li>`;
   h += '</ul><button type="button" class="btn wide" id="btn-add-actor">+ 배우 추가</button></section>';
   if (A) h += actorInspector(A);
   else if (sel === 'cam') h += camInspector();
-  else if (!B) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
+  else if (!B && !L) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
   h += boxList();
   if (B) h += boxInspector(B);
+  h += lightList();
+  if (L) h += lightInspector(L);
+  h += studioPanel();
   h += '<section class="sec"><h2>출력 화면</h2>'
     + `<label class="check" for="o-numbers"><input type="checkbox" id="o-numbers"${o.numbers ? ' checked' : ''}> 번호 표시</label>`
     + `<label class="check" for="o-tape"><input type="checkbox" id="o-tape"${o.tape ? ' checked' : ''}> 배우마다 색 구분</label>`
@@ -1386,6 +1547,32 @@ function dupBox(s) {
   pushBox(Object.assign({}, s, { id: newBoxId(), num: nextBoxNum(), x: r2(clamp(s.x + ux * s.w, -BOX_LIM, BOX_LIM)), z: r2(clamp(s.z + uz * s.w, -BOX_LIM, BOX_LIM)), lock: false }));
 }
 function deleteBox(b) { state.boxes = state.boxes.filter(x => x !== b); if (sel === b.id) sel = null; commit(); mark('struct', 'panel'); }
+function nextLightNum() { const used = new Set(state.lights.map(l => l.num)); let n = 1; while (used.has(n)) n++; return n; }
+function newLight(num, name, type, color, intensity, pos, tgt) {
+  return { id: newLightId(), num, name: name || '', type: type || 'spot', color: color || '#fff1d6', intensity: intensity == null ? 1.4 : intensity,
+    distance: 12, angle: 45, enabled: true, pos: pos || [2.5, 3, 3], tgt: tgt || [0, 1, 0] };
+}
+function addLight() {
+  if (state.lights.length >= 12) { toast('조명은 12개까지 둘 수 있습니다.'); return; }
+  const n = nextLightNum(), c = sampleCam(time), l = newLight(n, '', 'spot', '#fff1d6', 1.4, [r2(c.pos[0]), r2(Math.max(1.8, c.pos[1] + 1)), r2(c.pos[2])], c.tgt.map(r2));
+  state.lights.push(l); sel = l.id; commit(); mark('struct', 'panel');
+}
+function duplicateLight(l) {
+  if (state.lights.length >= 12) { toast('조명은 12개까지 둘 수 있습니다.'); return; }
+  const n = nextLightNum(), d = JSON.parse(JSON.stringify(l)); d.id = newLightId(); d.num = n; d.name = l.name ? l.name + ' 복제' : ''; d.pos[0] = r2(d.pos[0] + 0.8);
+  state.lights.push(d); sel = d.id; commit(); mark('struct', 'panel');
+}
+function deleteLight(l) { state.lights = state.lights.filter(x => x !== l); if (sel === l.id) sel = null; commit(); mark('struct', 'panel'); }
+function addThreePointRig() {
+  if (state.lights.length > 9) { toast('3점 조명을 추가할 공간이 없습니다.'); return; }
+  const used = new Set(state.lights.map(l => l.num)), nums = []; for (let n = 1; nums.length < 3; n++) if (!used.has(n)) nums.push(n);
+  const rig = [
+    newLight(nums[0], '키 라이트', 'spot', '#ffd7aa', 2.2, [3.5, 3.2, 4], [0, 1.1, 0]),
+    newLight(nums[1], '필 라이트', 'spot', '#bcd8ff', 1.15, [-3.2, 2.5, 3], [0, 1.0, 0]),
+    newLight(nums[2], '림 라이트', 'spot', '#fff0d2', 1.8, [0.8, 3.4, -3.5], [0, 1.25, 0]),
+  ];
+  state.lights.push(...rig); sel = rig[0].id; commit(); mark('struct', 'panel'); toast('키·필·림 3점 조명을 추가했습니다.');
+}
 const BOX_FIELD = {
   'f-bx': ['x', -BOX_LIM, BOX_LIM], 'f-bz': ['z', -BOX_LIM, BOX_LIM], 'f-by': ['y', 0, BOX_Y_MAX], 'f-brot': ['rot', -180, 180],
   'f-bw': ['w', ...BOX_SIZE_LIM.w], 'f-bh': ['h', ...BOX_SIZE_LIM.h], 'f-bd': ['d', ...BOX_SIZE_LIM.d],
@@ -1407,19 +1594,46 @@ function boxField(b, t, final) {
   mark('ui');
   if (final) { if (t.type === 'number') t.value = String(b[f[0]]); updateBoxMeta(b); commit(); }
 }
+const LIGHT_SCALAR = { 'f-ly': ['pos', 1, 0.05, 20], 'f-lintensity': ['intensity', null, 0, 5], 'f-ldistance': ['distance', null, 1, 50], 'f-langle': ['angle', null, 8, 85], 'f-lty': ['tgt', 1, 0, 20] };
+function lightField(l, t, final) {
+  if (t.id === 'f-lname') { l.name = t.value.slice(0, 24); if (final) commit(); return true; }
+  if (t.id === 'f-lcolor') { if (/^#[0-9a-fA-F]{6}$/.test(t.value)) l.color = t.value; mark('struct'); if (final) commit(); return true; }
+  if (t.id === 'f-lenabled') { if (final) { l.enabled = t.checked; commit(); mark('struct', 'panel'); } return true; }
+  const vec = { 'f-lx': ['pos', 0], 'f-lz': ['pos', 2], 'f-ltx': ['tgt', 0], 'f-ltz': ['tgt', 2] }[t.id], sc = LIGHT_SCALAR[t.id];
+  if (!vec && !sc) return false;
+  const v = parseFloat(t.value); if (!isFinite(v)) return true;
+  if (vec) l[vec[0]][vec[1]] = r2(clamp(v, -BOX_LIM, BOX_LIM));
+  else if (sc[1] == null) l[sc[0]] = r2(clamp(v, sc[2], sc[3])); else l[sc[0]][sc[1]] = r2(clamp(v, sc[2], sc[3]));
+  mark('struct', 'ui'); if (final) commit(); return true;
+}
+function environmentField(t, final) {
+  const r = state.room, g = state.lighting;
+  if (t.id === 'f-room') { if (final) { r.enabled = t.checked; commit(); mark('struct', 'panel'); } return true; }
+  if (t.id === 'f-rceiling') { if (final) { r.ceiling = t.checked; commit(); mark('struct', 'panel'); } return true; }
+  const f = { 'f-rw': [r, 'w', 2, 30], 'f-rd': [r, 'd', 2, 40], 'f-rh': [r, 'h', 2, 12], 'f-ambient': [g, 'ambient', 0, 2], 'f-sun': [g, 'sun', 0, 2] }[t.id];
+  if (!f) return false; const v = parseFloat(t.value); if (!isFinite(v)) return true;
+  f[0][f[1]] = r2(clamp(v, f[2], f[3])); mark('struct', 'ui'); if (final) commit(); return true;
+}
+function cameraLensField(t, final) {
+  const f = { 'f-fishfov': ['fishFov', 100, 170], 'f-fishstrength': ['fishStrength', 0, 1] }[t.id];
+  if (!f) return false; const v = parseFloat(t.value); if (!isFinite(v)) return true;
+  state.camera[f[0]] = r2(clamp(v, f[1], f[2])); mark('ui'); if (final) commit(); return true;
+}
 
 panel.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || !state || exporting) return;
-  const A = selActor(), B = selBox();
+  const A = selActor(), B = selBox(), L = selLight();
   if (b.dataset.sel) { select(b.dataset.sel); return; }
   if (b.dataset.tone && B) { B.tone = toneOf(b.dataset.tone).id; commit(); mark('struct', 'panel'); return; }
+  if (b.dataset.roomtone) { state.room.tone = toneOf(b.dataset.roomtone).id; commit(); mark('struct', 'panel'); return; }
+  if (b.dataset.lighttype && L) { L.type = b.dataset.lighttype === 'point' ? 'point' : 'spot'; commit(); mark('struct', 'panel'); return; }
   if (b.dataset.boxsize !== undefined && B) {
     const p = BOX_PRESETS[+b.dataset.boxsize];
     if (p) { B.w = p.w; B.h = p.h; B.d = p.d; updateBoxMeta(B); commit(); mark('ui'); }
     return;
   }
   if (b.dataset.limb && A) { A.limbs[b.dataset.limb] = !A.limbs[b.dataset.limb]; commit(); mark('struct', 'panel'); return; }
-  if (b.dataset.lens) { state.camera.lens = +b.dataset.lens; commit(); mark('panel'); return; }
+  if (b.dataset.lens) { state.camera.lens = b.dataset.lens === 'fisheye' ? 'fisheye' : +b.dataset.lens; commit(); mark('panel'); return; }
   // 프리셋은 넣자마자 재생하므로 포커스를 재생 버튼으로 옮긴다: 멈추려고 누른 스페이스가 프리셋을 다시 넣지 않게
   const toPlay = () => { const p = $('#btn-play'); if (p) p.focus({ preventScroll: true }); };
   if (b.dataset.preset && A) { applyPreset(A, b.dataset.preset); toPlay(); return; }
@@ -1430,6 +1644,10 @@ panel.addEventListener('click', e => {
   switch (b.id) {
     case 'btn-add-actor': addActor(); break;
     case 'btn-add-box': addBox(); break;
+    case 'btn-add-light': addLight(); break;
+    case 'btn-light-rig': addThreePointRig(); break;
+    case 'btn-dup-light': if (L) duplicateLight(L); break;
+    case 'btn-del-light': if (L) deleteLight(L); break;
     case 'btn-dup-box': if (B) dupBox(B); break;
     case 'btn-del-box': if (B) deleteBox(B); break;
     case 'btn-new2': newScene(); break;
@@ -1454,6 +1672,9 @@ panel.addEventListener('input', e => {
   if (!state) return;
   const t = e.target, B = selBox();
   if (B && t.id && t.id.startsWith('f-b')) { boxField(B, t, false); return; }
+  const L = selLight(); if (L && lightField(L, t, false)) return;
+  if (environmentField(t, false)) return;
+  if (cameraLensField(t, false)) return;
   const A = selActor(); if (!A) return;
   if (t.dataset.pose !== undefined) { setPlaying(false); actorKeyAt(A, time, true).p[+t.dataset.pose] = +t.value; mark('ui'); }
   else if (t.dataset.size) {
@@ -1472,6 +1693,9 @@ panel.addEventListener('change', e => {
   if (!state) return;
   const t = e.target, B = selBox();
   if (B && t.id && t.id.startsWith('f-b')) { boxField(B, t, true); return; }
+  const L = selLight(); if (L && lightField(L, t, true)) return;
+  if (environmentField(t, true)) return;
+  if (cameraLensField(t, true)) return;
   const A = selActor();
   if ((t.id === 'f-x' || t.id === 'f-z') && A) {
     const v = parseFloat(t.value);
@@ -1595,6 +1819,15 @@ function syncUI() {
     for (const k of ['x', 'z', 'y', 'w', 'h', 'd']) setNum('f-b' + k, B[k]);
     setRange('f-brot', Math.round(normDeg(B.rot)), '°');
   }
+  const L = selLight();
+  if (L) {
+    setNum('f-lx', L.pos[0]); setNum('f-ly', L.pos[1]); setNum('f-lz', L.pos[2]);
+    setNum('f-ltx', L.tgt[0]); setNum('f-lty', L.tgt[1]); setNum('f-ltz', L.tgt[2]);
+    setRange('f-lintensity', r2(L.intensity), ''); setRange('f-ldistance', r2(L.distance), 'm'); setRange('f-langle', Math.round(L.angle), '°');
+  }
+  setNum('f-rw', state.room.w); setNum('f-rd', state.room.d); setNum('f-rh', state.room.h);
+  setRange('f-ambient', r2(state.lighting.ambient), ''); setRange('f-sun', r2(state.lighting.sun), '');
+  setRange('f-fishfov', Math.round(state.camera.fishFov), '°'); setRange('f-fishstrength', r2(state.camera.fishStrength), '');
   const ks = $('#keystate');
   if (ks) { ks.textContent = has ? '키 있음' : '키 없음'; ks.classList.toggle('has', has); }
   const del = $('#btn-delkey'); if (del) del.disabled = !has || count < 2;
@@ -1648,8 +1881,10 @@ window.addEventListener('keydown', e => {
   }
   else if ((e.key === 'Delete' || e.key === 'Backspace') && sel && tag !== 'INPUT') {
     e.preventDefault();
-    const B = selBox();
-    if (B) { deleteBox(B); toast('배경 상자를 지웠습니다. 실행 취소로 되돌릴 수 있습니다.'); } else deleteKeyHere();
+    const B = selBox(), L = selLight();
+    if (B) { deleteBox(B); toast('배경 상자를 지웠습니다. 실행 취소로 되돌릴 수 있습니다.'); }
+    else if (L) { deleteLight(L); toast('조명을 지웠습니다. 실행 취소로 되돌릴 수 있습니다.'); }
+    else deleteKeyHere();
   }
 });
 
@@ -1849,3 +2084,4 @@ if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot &&
 </script>
 
 </body></html>
+
