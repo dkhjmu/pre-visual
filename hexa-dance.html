@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hexa DANCE v0.1</title>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hexa DANCE v0.2</title>
 <style>
-:root{color-scheme:dark;font:14px system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;background:#10141d;color:#e8edf7}header{height:58px;display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid #2c3443;flex-wrap:wrap}header strong{font-size:17px;margin-right:12px;color:#72e0d1}button,select,input{background:#242c3a;color:#eef3ff;border:1px solid #3c475a;border-radius:6px;padding:7px;cursor:pointer}button:hover{background:#344157}button:disabled{opacity:.4}main{display:grid;grid-template-columns:250px minmax(300px,1fr) 260px;height:calc(100vh - 90px)}aside{overflow:auto;padding:15px;border-right:1px solid #303a49}aside:last-child{border-right:0;border-left:1px solid #303a49}h3{margin:7px 0 12px;font-size:14px;color:#9faec5}#view{position:relative;min-width:0;overflow:hidden}#canvas{width:100%;height:100%;display:block}.tree{max-height:calc(100vh - 180px);overflow:auto}.bone{display:block;width:100%;border:0;background:transparent;text-align:left;padding:5px 7px;font-size:12px;white-space:nowrap}.bone.active{background:#186f70;color:white}.bone:hover{background:#2a394b}.section{border-top:1px solid #334052;margin-top:16px;padding-top:13px}.row{display:flex;gap:7px;align-items:center;margin:8px 0}.row label{flex:1;font-size:12px}.row input[type=number]{width:88px}.row input[type=range]{width:120px}#status{height:32px;border-top:1px solid #303a49;padding:7px 16px;font-size:12px;color:#aebcd0}#hint{position:absolute;left:12px;bottom:12px;background:#111a25dd;padding:10px;border-radius:8px;font-size:12px;pointer-events:none}#selected{font-weight:700;color:#73dfd2;word-break:break-word}#load{display:none}small{color:#99a8bb}input[type=checkbox]{accent-color:#4ec9b8}@media(max-width:900px){main{grid-template-columns:190px minmax(250px,1fr) 205px}aside{padding:9px}}@media(max-width:680px){header{height:auto}main{height:calc(100vh - 130px);grid-template-columns:145px minmax(160px,1fr)}aside:last-child{grid-column:1/-1;max-height:190px;border-top:1px solid #334052}#hint{display:none}}
+:root{color-scheme:dark;font:14px system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;background:#10141d;color:#e8edf7}header{height:58px;display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid #2c3443;flex-wrap:wrap}header strong{font-size:17px;margin-right:12px;color:#72e0d1}button,select,input{background:#242c3a;color:#eef3ff;border:1px solid #3c475a;border-radius:6px;padding:7px;cursor:pointer}button:hover{background:#344157}button:disabled{opacity:.4}main{display:grid;grid-template-columns:250px minmax(300px,1fr) 260px;height:calc(100vh - 90px)}aside{overflow:auto;padding:15px;border-right:1px solid #303a49}aside:last-child{border-right:0;border-left:1px solid #303a49}h3{margin:7px 0 12px;font-size:14px;color:#9faec5}#view{position:relative;min-width:0;overflow:hidden}#canvas{width:100%;height:100%;display:block}.tree{max-height:calc(100vh - 180px);overflow:auto}.bone{display:block;width:100%;border:0;background:transparent;text-align:left;padding:5px 7px;font-size:12px;white-space:nowrap}.bone.active{background:#186f70;color:white}.bone:hover{background:#2a394b}.section{border-top:1px solid #334052;margin-top:16px;padding-top:13px}.row{display:flex;gap:7px;align-items:center;margin:8px 0}.row label{flex:1;font-size:12px}.row input[type=number]{width:88px}.row input[type=range]{width:120px}#status{height:32px;border-top:1px solid #303a49;padding:7px 16px;font-size:12px;color:#aebcd0}#hint{position:absolute;left:12px;bottom:12px;background:#111a25dd;padding:10px;border-radius:8px;font-size:12px;pointer-events:none}#selected{font-weight:700;color:#73dfd2;word-break:break-word}#load{display:none}small{color:#99a8bb}input[type=checkbox]{accent-color:#4ec9b8}.gesture-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}.gesture-grid button{font-size:11px;padding:8px 3px}.gesture-grid button:focus{outline:2px solid #56c9bd}@media(max-width:900px){main{grid-template-columns:190px minmax(250px,1fr) 205px}aside{padding:9px}}@media(max-width:680px){header{height:auto}main{height:calc(100vh - 130px);grid-template-columns:145px minmax(160px,1fr)}aside:last-child{grid-column:1/-1;max-height:190px;border-top:1px solid #334052}#hint{display:none}}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script></head>
-<body><header><strong>⬡ HEXA DANCE <small>v0.1</small></strong>
-<button id="reset">기본 포즈</button><button id="undo" title="Ctrl+Z">↶ 실행 취소</button><button id="redo" title="Ctrl+Y">↷ 다시 실행</button>
+<body><header><strong>⬡ HEXA DANCE <small>v0.2</small></strong>
+<button id="reset">기본 포즈</button><button id="jessiePose" title="첨부된 이미지의 자세를 참고한 프리셋">참고 이미지 포즈</button><button id="undo" title="Ctrl+Z">↶ 실행 취소</button><button id="redo" title="Ctrl+Y">↷ 다시 실행</button>
 <button id="save">JSON 저장</button><button id="loadbtn">JSON 불러오기</button><input type="file" id="load" accept=".json,application/json">
 <button id="png">PNG 출력</button><select id="resolution"><option value="1920x1080">1920×1080</option><option value="2560x1440">2560×1440</option></select></header>
 <main><aside><h3>관절 계층 <span id="count"></span></h3><input id="search" placeholder="관절 검색" style="width:100%"><div class="tree" id="tree"></div></aside>
@@ -13,6 +13,18 @@
 <aside><h3>선택된 관절</h3><div id="selected">없음</div><div class="section"><h3>로컬 회전 (도)</h3><div id="angles"></div><button id="jointReset">선택 관절 초기화</button><div class="row"><label><input id="limits" type="checkbox"> 관절 제한 (기본 비활성)</label></div><small>회전은 로컬 Euler XYZ 기준이며 저장 시 Quaternion을 사용합니다.</small></div>
 <div class="section"><h3>신체 비율</h3><div id="sliders"></div><button id="bodyReset">비율 초기화</button></div>
 <div class="section"><h3>카메라</h3><div id="cameras"></div><div class="row"><label><input type="checkbox" id="jointsVisible" checked> 관절 표시</label></div><div class="row"><label><input type="checkbox" id="gizmoVisible" checked> 회전 Gizmo 표시</label></div><div class="row"><label><input type="checkbox" id="gridVisible" checked> 바닥 그리드</label></div></div>
+<div class="section" id="handPanel"><h3>✋ 손 제스처</h3>
+<div class="row"><label for="handSide">편집할 손</label><select id="handSide"><option value="Right">오른손</option><option value="Left">왼손</option></select></div>
+<div class="gesture-grid" id="gestureButtons">
+<button data-gesture="open">🖐 펼치기</button><button data-gesture="fist">✊ 주먹</button>
+<button data-gesture="point">☝ 검지 가리키기</button><button data-gesture="peace">✌ 브이</button>
+<button data-gesture="thumbs">👍 엄지척</button><button data-gesture="rock">🤘 락 사인</button>
+</div>
+<div class="row"><label>제스처 강도</label><input id="gestureStrength" type="range" min="0" max="100" value="100" step="5"><small id="gestureStrengthValue">100%</small></div>
+<h3>손가락 굽힘</h3><div id="fingerSliders"></div>
+<div class="row"><button id="fingerReset">선택 손 펼치기</button><button id="selectWrist">손목 선택</button></div>
+<small>프리셋은 손가락 관절만 조절합니다. 손목은 기존 회전 Gizmo에서 방향을 맞춰주세요. 슬라이더 0=펴기, 100=굽히기.</small>
+</div>
 <div class="section"><h3>포즈 도구</h3><button id="copy">포즈 복사</button><button id="paste">붙여넣기</button><button id="mirror">좌우 미러</button></div></aside></main><div id="status">준비 중…</div>
 <script type="module">
 import * as THREE from 'three';
@@ -80,6 +92,59 @@ renderer.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clie
 function select(id){if(selected&&bones.get(selected)?.marker)bones.get(selected).marker.material=jointMat;selected=id;const b=bones.get(id);if(!b)return;if(b.marker)b.marker.material=selectMat;tc.attach(b.group);tc.visible=$('gizmoVisible').checked;$('selected').textContent=id;document.querySelectorAll('.bone').forEach(el=>el.classList.toggle('active',el.dataset.id===id));refreshAngles()}
 function refreshAngles(){const el=$('angles');el.innerHTML='';if(!selected)return;const e=bones.get(selected).group.rotation;for(const [axis,v] of [['X',e.x],['Y',e.y],['Z',e.z]]){const row=document.createElement('div');row.className='row';const label=document.createElement('label');label.textContent=axis+'°';const input=document.createElement('input');input.type='number';input.step='1';input.value=(THREE.MathUtils.radToDeg(v)).toFixed(1);input.addEventListener('change',()=>{pushHistory();bones.get(selected).group.rotation[axis.toLowerCase()]=THREE.MathUtils.degToRad(Number(input.value)||0);if($('limits').checked)clampSelected();refreshAngles()});row.append(label,input);el.append(row)}}
 function clampSelected(){if(!selected)return;const g=bones.get(selected).group;let max=180;if(/Forearm|LowerLeg/.test(selected))max=155;else if(/Neck|Head/.test(selected))max=65;else if(/Finger|Thumb|Index|Middle|Ring|Little/.test(selected))max=100;for(const a of ['x','y','z'])g.rotation[a]=THREE.MathUtils.clamp(g.rotation[a],-THREE.MathUtils.degToRad(max),THREE.MathUtils.degToRad(max))}
+
+// Hand gesture editing. All changes use the existing humanoid-v1 bone IDs and JSON format.
+const fingerNames=['Thumb','Index','Middle','Ring','Little'];
+const fingerLabels={Thumb:'엄지',Index:'검지',Middle:'중지',Ring:'약지',Little:'소지'};
+const fingerInputs=new Map();
+const gesturePatterns={
+ open:{Thumb:0,Index:0,Middle:0,Ring:0,Little:0},
+ fist:{Thumb:80,Index:100,Middle:100,Ring:100,Little:100},
+ point:{Thumb:65,Index:0,Middle:100,Ring:100,Little:100},
+ peace:{Thumb:75,Index:0,Middle:0,Ring:100,Little:100},
+ thumbs:{Thumb:0,Index:100,Middle:100,Ring:100,Little:100},
+ rock:{Thumb:65,Index:0,Middle:100,Ring:100,Little:0}
+};
+function fingerBones(side,finger){return [1,2,3].map(n=>bones.get(side+finger+n)).filter(Boolean)}
+function fingerCurl(side,finger,percent){
+ const p=THREE.MathUtils.clamp(percent,0,100)/100;
+ // Finger segments extend along local -Y; curl toward palm via local X.
+ // Thumb is offset from the palm and needs an additional splay rotation.
+ const angles=finger==='Thumb'?[42,48,32]:[67,82,58];
+ fingerBones(side,finger).forEach((b,i)=>{
+   b.group.rotation.set(THREE.MathUtils.degToRad(-angles[i]*p),0,0,'XYZ');
+   if(finger==='Thumb'&&i===0)b.group.rotation.z=THREE.MathUtils.degToRad((side==='Left'?-1:1)*(30-38*p));
+ });
+}
+function readFingerCurl(side,finger){
+ const segments=fingerBones(side,finger);if(!segments.length)return 0;
+ const max=finger==='Thumb'?42:67;
+ return Math.round(THREE.MathUtils.clamp(Math.abs(THREE.MathUtils.radToDeg(segments[0].group.rotation.x))/max*100,0,100));
+}
+function refreshFingerSliders(){const side=$('handSide').value;for(const finger of fingerNames){const input=fingerInputs.get(finger);if(!input)continue;const v=readFingerCurl(side,finger);input.value=v;$('fingerValue_'+finger).textContent=v+'%'}}
+for(const finger of fingerNames){
+ const row=document.createElement('div');row.className='row';
+ const label=document.createElement('label');label.textContent=fingerLabels[finger];
+ const input=document.createElement('input');input.type='range';input.min=0;input.max=100;input.step=1;
+ const val=document.createElement('small');val.id='fingerValue_'+finger;
+ let gestureStarted=false;
+ input.addEventListener('pointerdown',()=>{pushHistory();gestureStarted=true});
+ input.addEventListener('input',()=>{if(!gestureStarted){pushHistory();gestureStarted=true}fingerCurl($('handSide').value,finger,Number(input.value));val.textContent=input.value+'%';refreshAngles()});
+ input.addEventListener('change',()=>{gestureStarted=false});
+ row.append(label,input,val);$('fingerSliders').append(row);fingerInputs.set(finger,input);
+}
+$('handSide').addEventListener('change',refreshFingerSliders);
+$('gestureStrength').addEventListener('input',e=>$('gestureStrengthValue').textContent=e.target.value+'%');
+$('gestureButtons').addEventListener('click',e=>{
+ const btn=e.target.closest('[data-gesture]');if(!btn)return;
+ const name=btn.dataset.gesture,pattern=gesturePatterns[name];if(!pattern)return;
+ pushHistory();const side=$('handSide').value,strength=Number($('gestureStrength').value)/100;
+ for(const finger of fingerNames)fingerCurl(side,finger,pattern[finger]*strength);
+ refreshFingerSliders();refreshAngles();status((side==='Right'?'오른손':'왼손')+' 제스처 적용: '+btn.textContent.trim());
+});
+$('fingerReset').addEventListener('click',()=>{pushHistory();for(const finger of fingerNames)fingerCurl($('handSide').value,finger,0);refreshFingerSliders();refreshAngles();status('손가락을 펼쳤습니다.')});
+$('selectWrist').addEventListener('click',()=>select($('handSide').value+'Hand'));
+
 const defaultBody={height:1.65,headScale:1,shoulderWidth:1,armLength:1,legLength:1,hipWidth:1};let body={...defaultBody};
 function applyBody(){const k=body.height/1.65;root.scale.setScalar(k);
  for(const s of specs){const b=bones.get(s.id);const p=[...baseLengths.get(s.id)];const arm=/Clavicle|UpperArm|Forearm|Hand|Thumb|Index|Middle|Ring|Little/.test(s.id),leg=/UpperLeg|LowerLeg|Foot|Toe/.test(s.id);const mult=arm?body.armLength:leg?body.legLength:1;
@@ -87,11 +152,34 @@ function applyBody(){const k=body.height/1.65;root.scale.setScalar(k);
  if(s.shape==='head'){b.group.scale.setScalar(body.headScale)}else if(s.shape==='limb'){b.mesh[0].scale.y=mult;b.mesh[0].position.y=-s.length*mult/2}else if(s.shape==='finger'){b.mesh[0].scale.y=mult;b.mesh[0].position.y=-s.length*mult/2}
  } }
 function snapshot(){const rotations={};for(const [id,b] of bones)rotations[id]=b.group.quaternion.toArray();return {rotations,body:{...body},root:{position:root.position.toArray(),rotation:root.quaternion.toArray()}}}
-function restore(s){if(!s||!s.rotations)return;body={...defaultBody,...s.body};for(const [id,q] of Object.entries(s.rotations)){if(bones.has(id)&&Array.isArray(q)&&q.length===4&&q.every(Number.isFinite)){bones.get(id).group.quaternion.fromArray(q).normalize()}}if(s.root?.position)root.position.fromArray(s.root.position);if(s.root?.rotation)root.quaternion.fromArray(s.root.rotation).normalize();applyBody();updateSliders();refreshAngles()}
+function restore(s){if(!s||!s.rotations)return;body={...defaultBody,...s.body};for(const [id,q] of Object.entries(s.rotations)){if(bones.has(id)&&Array.isArray(q)&&q.length===4&&q.every(Number.isFinite)){bones.get(id).group.quaternion.fromArray(q).normalize()}}if(s.root?.position)root.position.fromArray(s.root.position);if(s.root?.rotation)root.quaternion.fromArray(s.root.rotation).normalize();applyBody();updateSliders();refreshAngles();refreshFingerSliders()}
 function pushHistory(){history.push(snapshot());if(history.length>80)history.shift();future=[];updateHistory()}
 function updateHistory(){$('undo').disabled=!history.length;$('redo').disabled=!future.length}
 $('undo').onclick=()=>{if(!history.length)return;future.push(snapshot());restore(history.pop());updateHistory()};$('redo').onclick=()=>{if(!future.length)return;history.push(snapshot());restore(future.pop());updateHistory()};
-$('reset').onclick=()=>{pushHistory();for(const b of bones.values())b.group.quaternion.identity();root.position.set(0,0,0);root.quaternion.identity();refreshAngles();status('기본 포즈로 복원했습니다.')};
+$('reset').onclick=()=>{pushHistory();for(const b of bones.values())b.group.quaternion.identity();root.position.set(0,0,0);root.quaternion.identity();refreshAngles();refreshFingerSliders();status('기본 포즈로 복원했습니다.')};
+// Reference-image inspired static pose. Approximation: single 2D image cannot recover exact depth.
+$('jessiePose').onclick=()=>{
+ pushHistory();
+ for(const b of bones.values())b.group.quaternion.identity();
+ root.position.set(0,0,0);root.quaternion.identity();
+ const deg=(x,y,z)=>[x,y,z].map(THREE.MathUtils.degToRad);
+ const pose={
+  Hips:[0,-18,-8],Spine:[-7,-8,7],Chest:[-4,-12,10],UpperChest:[-3,-12,3],Neck:[4,18,-4],Head:[-5,22,3],
+  // Extended hand reaches toward the viewer, elbow slightly bent.
+  RightClavicle:[-4,0,-12],RightUpperArm:[79,-22,-36],RightForearm:[-17,12,-14],RightHand:[-15,2,8],
+  RightThumb1:[-30,0,-35],RightIndex1:[-24,0,0],RightMiddle1:[-13,0,0],RightRing1:[-50,0,0],RightLittle1:[-56,0,0],
+  // Other hand rests behind the hip.
+  LeftClavicle:[-4,0,9],LeftUpperArm:[-28,-13,39],LeftForearm:[-103,9,-10],LeftHand:[-22,0,12],
+  // Asymmetric stance: one leg planted, other leg stretches diagonally.
+  RightUpperLeg:[-5,8,-7],RightLowerLeg:[8,0,2],RightFoot:[-3,0,0],
+  LeftUpperLeg:[-8,-13,26],LeftLowerLeg:[7,0,-8],LeftFoot:[8,0,-5]
+ };
+ for(const [id,xyz] of Object.entries(pose))bones.get(id).group.rotation.set(...deg(...xyz),'XYZ');
+ // A three-quarter camera makes the extended hand and torso twist visible.
+ camera.position.set(3.1,2.15,4.5);orbit.target.set(0,1.05,0);orbit.update();
+ select('RightUpperArm');refreshAngles();
+ status('참고 이미지 기반 3D 포즈를 적용했습니다. 단일 사진으로 정확한 깊이는 알 수 없어 근사한 자세입니다.');
+};
 $('jointReset').onclick=()=>{if(!selected)return;pushHistory();bones.get(selected).group.quaternion.identity();refreshAngles()};
 $('copy').onclick=()=>{clipboard=snapshot();status('포즈를 복사했습니다.')};$('paste').onclick=()=>{if(!clipboard)return;pushHistory();restore(clipboard);status('포즈를 붙여넣었습니다.')};
 $('mirror').onclick=()=>{pushHistory();const old=snapshot();for(const [id,b] of bones){let other=id.startsWith('Left')?'Right'+id.slice(4):id.startsWith('Right')?'Left'+id.slice(5):id;const q=old.rotations[other];if(!q)continue;const qq=new THREE.Quaternion(...q);const m=new THREE.Matrix4().makeRotationFromQuaternion(qq);const reflect=new THREE.Matrix4().makeScale(-1,1,1);m.premultiply(reflect).multiply(reflect);b.group.quaternion.setFromRotationMatrix(m).normalize()}refreshAngles();status('좌우 미러를 적용했습니다. 비대칭 로컬 축의 복잡한 자세는 확인이 필요합니다.')};
@@ -113,5 +201,5 @@ $('count').textContent='('+specs.length+')';
 window.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?$('redo').click():$('undo').click()}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();$('redo').click()}});
 function resize(){const w=$('view').clientWidth,h=$('view').clientHeight;camera.aspect=w/Math.max(1,h);camera.updateProjectionMatrix();renderer.setSize(w,h,false)}new ResizeObserver(resize).observe($('view'));resize();
 $('png').onclick=()=>{const [w,h]=$('resolution').value.split('x').map(Number),ow=$('view').clientWidth,oh=$('view').clientHeight,oldRatio=camera.aspect,oldGizmo=tc.visible;try{tc.visible=false;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);renderer.render(scene,camera);renderer.domElement.toBlob(blob=>{if(blob)download(blob,'hexa-dance-pose.png');else alert('PNG 출력 실패');renderer.setSize(ow,oh,false);camera.aspect=oldRatio;camera.updateProjectionMatrix();tc.visible=oldGizmo},'image/png')}catch(err){renderer.setSize(ow,oh,false);camera.aspect=oldRatio;camera.updateProjectionMatrix();tc.visible=oldGizmo;alert(err.message)}};
-function tick(){requestAnimationFrame(tick);orbit.update();renderer.render(scene,camera)}applyBody();renderTree();updateHistory();status('준비 완료 · '+specs.length+'개 관절 · 키프레임/애니메이션 없음');tick();
+function tick(){requestAnimationFrame(tick);orbit.update();renderer.render(scene,camera)}applyBody();renderTree();refreshFingerSliders();updateHistory();status('준비 완료 · '+specs.length+'개 관절 · 키프레임/애니메이션 없음');tick();
 </script></body></html>
