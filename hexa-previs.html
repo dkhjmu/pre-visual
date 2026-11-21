@@ -48,6 +48,9 @@ h1,h2,h3,p{margin:0}
   padding-left:max(16px, env(safe-area-inset-left, 0px));
   padding-right:max(16px, env(safe-area-inset-right, 0px));
 }
+body.capture .app{height:100%;padding:0;gap:0;grid-template-columns:1fr;grid-template-rows:1fr;grid-template-areas:"stage"}
+body.capture .top,body.capture .panel,body.capture .timeline,body.capture .view-toggle,body.capture .pip,body.capture .hint,body.capture .rec-flag{display:none!important}
+body.capture .stage{min-height:100vh;border-radius:0}
 
 /* 상단 */
 .top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
@@ -57,6 +60,11 @@ h1,h2,h3,p{margin:0}
 .logo{width:27px;height:24px;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--font-mono)}
 .top-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.review-bar{flex:1 0 100%;display:grid;grid-template-columns:auto minmax(180px,320px) auto minmax(0,1fr) auto;align-items:center;gap:7px;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.review-nav{display:flex;gap:5px}.review-nav .btn{padding-inline:9px}
+.review-meta{min-width:0}.review-title{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.review-note{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review-count{font:500 12px var(--font-mono);color:var(--muted);white-space:nowrap}
+.review-bar select{min-width:0}
 
 .btn{appearance:none;border:1px solid var(--line);background:var(--raised);color:var(--fg);border-radius:7px;padding:6px 11px;font-weight:500;line-height:1.2;cursor:pointer}
 .btn:hover{border-color:var(--muted)}
@@ -172,6 +180,10 @@ details.limb[open] > summary{margin-bottom:6px}
 .sheet video{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;display:block}
 .sheet progress{width:100%;height:10px;accent-color:var(--accent)}
 .sheet .rowbtns{justify-content:flex-end}
+.template-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.template-card{appearance:none;border:1px solid var(--line);background:var(--raised);color:var(--fg);border-radius:9px;padding:14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-height:116px}
+.template-card:hover{border-color:var(--accent);background:var(--accent-soft)}
+.template-card strong{font-size:14px}.template-card span{font-size:12px;color:var(--muted);line-height:1.45}
 .stack{display:flex;flex-direction:column;gap:12px}
 .stack-s{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:30;max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
@@ -182,6 +194,8 @@ details.limb[open] > summary{margin-bottom:6px}
   .stage{aspect-ratio:4/3;min-height:0;max-width:100%}
   .panel{overflow:visible}
   .stage.edit .hint{max-width:calc(100% - 180px)}
+  .template-grid{grid-template-columns:1fr}
+  .review-bar{grid-template-columns:auto minmax(0,1fr) auto}.review-meta{grid-column:1/-1}.review-count{display:none}
 }
 </style>
 
@@ -199,7 +213,20 @@ details.limb[open] > summary{margin-bottom:6px}
       <button type="button" class="btn quiet" id="btn-load">불러오기</button>
       <button type="button" class="btn quiet" id="btn-save">장면 저장</button>
       <input type="file" id="file-load" accept=".json,application/json" hidden>
+      <button type="button" class="btn quiet" id="btn-pack-load">콘티 팩</button>
+      <button type="button" class="btn quiet" id="btn-pack-save" disabled>팩 저장</button>
+      <input type="file" id="file-pack" accept=".json,application/json" hidden>
       <button type="button" class="btn primary" id="btn-export">내보내기</button>
+    </div>
+    <div class="review-bar" id="review-bar" hidden>
+      <div class="review-nav">
+        <button type="button" class="btn" id="btn-shot-prev" title="이전 장면 (Shift+←)">← 이전</button>
+        <button type="button" class="btn" id="btn-shot-next" title="다음 장면 (Shift+→)">다음 →</button>
+      </div>
+      <select id="shot-select" aria-label="콘티 장면 선택"></select>
+      <span class="review-count" id="shot-count"></span>
+      <div class="review-meta"><span class="review-title" id="shot-title"></span><span class="review-note" id="shot-note"></span></div>
+      <button type="button" class="btn primary" id="btn-shot-auto">자동 순회</button>
     </div>
   </header>
 
@@ -276,6 +303,19 @@ details.limb[open] > summary{margin-bottom:6px}
     </div>
   </div>
 </div>
+<div class="modal" id="scene-modal" role="dialog" aria-modal="true" aria-labelledby="scene-title" hidden>
+  <div class="sheet">
+    <h2 id="scene-title">새 장면 템플릿</h2>
+    <p class="note">새 장면을 골라도 실행 취소로 지금 작업을 되돌릴 수 있습니다.</p>
+    <div class="field"><label for="scene-room-width">실내 너비</label><input type="number" id="scene-room-width" min="6" max="20" step="0.5" value="8"></div>
+    <div class="template-grid">
+      <button type="button" class="template-card" data-scene-template="blank"><strong>빈 장면</strong><span>배우 1명과 기본 카메라만 있는 깨끗한 무대</span></button>
+      <button type="button" class="template-card" data-scene-template="table4"><strong>테이블 4인 실내</strong><span>고정 룸 박스, 회의 테이블, 의자와 앉은 배우 4명, 카메라와 조명</span></button>
+      <button type="button" class="template-card" data-scene-template="sample"><strong>동선 예제</strong><span>배우가 만나고 카메라가 다가가는 기본 8초 예제</span></button>
+    </div>
+    <div class="rowbtns"><button type="button" class="btn" id="scene-cancel">닫기</button></div>
+  </div>
+</div>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -287,10 +327,12 @@ details.limb[open] > summary{margin-bottom:6px}
 /* ---------- 기본 도구 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+if (new URLSearchParams(location.search).get('capture') === '1') document.body.classList.add('capture');
 const FPS = 24, EPS = 0.5 / FPS, D2R = Math.PI / 180;
 const TAPE = ['#E5484D', '#F2B705', '#30A46C', '#F2762E', '#D864C5', '#12A5B5', '#8E6CEF', '#A3B018'];
 const CLAY = '#9BA2AA';
 const STORE_KEY = 'hexa-previs:v1';
+const BOARD_STORE_KEY = 'hexa-previs:board-pack:v1';
 const LENSES = [
   { id: 'fisheye', name: '어안', tip: '약 160° 화각과 배럴 왜곡' },
   { id: 24, name: '24mm' }, { id: 35, name: '35mm' }, { id: 50, name: '50mm' }, { id: 85, name: '85mm' },
@@ -533,6 +575,7 @@ function normalize(o) {
 
 /* ---------- 상태 ---------- */
 let state = null, sel = null, time = 0, playing = false, playT0 = 0, view = 'edit', exporting = false;
+let boardPack = null, boardIndex = -1, boardAuto = false, boardTimer = 0;
 let undoStack = [], redoStack = [];
 const dirty = { struct: true, panel: true, tl: true, paths: true, ui: true, render: true };
 function mark(...flags) { for (const f of flags) dirty[f] = true; dirty.render = true; }
@@ -681,6 +724,124 @@ function redo() { if (!redoStack.length) return; const j = redoStack.pop(); undo
 function replaceScene(obj) {
   state = obj; sel = null; time = 0; setPlaying(false); resetVisuals(); commit(true); mark('struct', 'panel');
 }
+
+/* ---------- 콘티 팩 검토 ---------- */
+const sceneClone = scene => JSON.parse(JSON.stringify(scene));
+function normalizeBoardPack(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.scenes)) throw new Error('콘티 팩 형식이 아님');
+  const scenes = [];
+  for (let i = 0; i < Math.min(raw.scenes.length, 250); i++) {
+    const item = raw.scenes[i] || {};
+    const source = item.scene || item.project;
+    if (!source) continue;
+    try {
+      scenes.push({
+        id: typeof item.id === 'string' ? item.id.slice(0, 40) : `S${String(i + 1).padStart(3, '0')}`,
+        title: typeof item.title === 'string' ? item.title.slice(0, 100) : `장면 ${i + 1}`,
+        note: typeof item.note === 'string' ? item.note.slice(0, 300) : '',
+        time: clamp(Number(item.time) || 0, 0, 120),
+        view: item.view === 'edit' ? 'edit' : 'cam',
+        scene: normalize(source),
+      });
+    } catch (_) { /* 잘못된 장면 하나는 건너뛴다 */ }
+  }
+  if (!scenes.length) throw new Error('유효한 장면이 없음');
+  return {
+    type: 'hexa-previs-board-pack', version: 1,
+    title: typeof raw.title === 'string' ? raw.title.slice(0, 100) : '콘티 팩',
+    scenes,
+  };
+}
+function saveBoardCurrent() {
+  if (!boardPack || boardIndex < 0 || !boardPack.scenes[boardIndex] || !state) return;
+  boardPack.scenes[boardIndex].scene = sceneClone(state);
+  boardPack.scenes[boardIndex].time = time;
+  boardPack.scenes[boardIndex].view = view;
+}
+function persistBoardPack() {
+  if (!boardPack) return;
+  saveBoardCurrent();
+  try { localStorage.setItem(BOARD_STORE_KEY, JSON.stringify({ ...boardPack, currentIndex: boardIndex })); } catch (_) { /* 큰 팩은 저장 생략 */ }
+}
+function updateBoardUI() {
+  const bar = $('#review-bar'), save = $('#btn-pack-save');
+  if (!boardPack) { bar.hidden = true; save.disabled = true; return; }
+  bar.hidden = false; save.disabled = false;
+  const select = $('#shot-select');
+  select.innerHTML = boardPack.scenes.map((s, i) => `<option value="${i}">${esc(s.id)} · ${esc(s.title)}</option>`).join('');
+  select.value = String(boardIndex);
+  const current = boardPack.scenes[boardIndex];
+  $('#shot-count').textContent = `${boardIndex + 1} / ${boardPack.scenes.length}`;
+  $('#shot-title').textContent = `${boardPack.title} — ${current.id} ${current.title}`;
+  $('#shot-note').textContent = current.note || '메모 없음';
+  $('#btn-shot-prev').disabled = boardIndex <= 0;
+  $('#btn-shot-next').disabled = boardIndex >= boardPack.scenes.length - 1;
+  $('#btn-shot-auto').textContent = boardAuto ? '순회 중지' : '자동 순회';
+}
+function loadBoardScene(index, keepCurrent = true, announce = true) {
+  if (!boardPack) return;
+  const next = clamp(Math.round(index), 0, boardPack.scenes.length - 1);
+  if (keepCurrent) saveBoardCurrent();
+  boardIndex = next;
+  const item = boardPack.scenes[boardIndex];
+  replaceScene(sceneClone(item.scene));
+  setView(item.view === 'edit' ? 'edit' : 'cam');
+  setTime(clamp(item.time || 0, 0, state.duration));
+  sel = 'cam'; mark('panel', 'ui');
+  updateBoardUI(); persistBoardPack();
+  if (announce) toast(`${item.id} · ${item.title}`);
+}
+function stopBoardAuto() {
+  boardAuto = false; clearTimeout(boardTimer); boardTimer = 0; setPlaying(false); updateBoardUI();
+}
+function queueBoardAuto() {
+  if (!boardAuto || !boardPack) return;
+  setTime(0); setView('cam'); setPlaying(true); updateBoardUI();
+  clearTimeout(boardTimer);
+  boardTimer = setTimeout(() => {
+    if (!boardAuto) return;
+    setPlaying(false);
+    if (boardIndex >= boardPack.scenes.length - 1) { stopBoardAuto(); toast('콘티 팩을 끝까지 검토했습니다.'); return; }
+    loadBoardScene(boardIndex + 1, true, false); queueBoardAuto();
+  }, state.duration * 1000 + 350);
+}
+function toggleBoardAuto() {
+  if (!boardPack) return;
+  if (boardAuto) { stopBoardAuto(); return; }
+  if (boardIndex >= boardPack.scenes.length - 1) loadBoardScene(0, true, false);
+  boardAuto = true; queueBoardAuto();
+}
+function installBoardPack(raw, index = 0, announce = true) {
+  stopBoardAuto(); boardPack = normalizeBoardPack(raw);
+  boardIndex = clamp(Math.round(index) || 0, 0, boardPack.scenes.length - 1);
+  loadBoardScene(boardIndex, false, false);
+  if (announce) toast(`${boardPack.title} · ${boardPack.scenes.length}개 장면을 불러왔습니다.`);
+}
+function restoreBoardPack() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BOARD_STORE_KEY) || 'null');
+    if (saved && Array.isArray(saved.scenes)) installBoardPack(saved, saved.currentIndex || 0, false);
+  } catch (_) { /* 저장된 팩이 없거나 손상됨 */ }
+}
+async function restoreOrLoadBoardPack() {
+  const params = new URLSearchParams(location.search), packUrl = params.get('pack');
+  if (packUrl) {
+    try {
+      const response = await fetch(packUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const raw = await response.json();
+      let requested = params.get('scene'), index = 0;
+      if (requested && /^\d+$/.test(requested)) index = Number(requested);
+      else if (requested && Array.isArray(raw.scenes)) { const found = raw.scenes.findIndex(s => s && s.id === requested); if (found >= 0) index = found; }
+      installBoardPack(raw, index, false);
+      const captureTime = Number(params.get('time'));
+      if (isFinite(captureTime)) setTime(clamp(captureTime, 0, state.duration));
+      toast(`${boardPack.title} 최신 팩을 자동으로 불러왔습니다.`);
+      return;
+    } catch (_) { toast('연결된 콘티 팩을 읽지 못해 브라우저에 저장된 팩을 확인합니다.'); }
+  }
+  restoreBoardPack();
+}
 let commitTimer = 0;
 function commitSoon() { clearTimeout(commitTimer); commitTimer = setTimeout(commit, 350); }
 
@@ -725,6 +886,7 @@ grid.position.y = 0.003; scene.add(grid);
 const editCam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
 editCam.layers.enable(1); editCam.layers.enable(2);   // 1: 편집 보조선, 2: 번호
 const shotCam = new THREE.PerspectiveCamera(32, 16 / 9, 0.1, 400);
+shotCam.layers.enable(3);   // 3: 카메라 출력에서만 보이는 실내 앞벽
 const orbit = { tx: 0, ty: 0.9, tz: 0, yaw: 0.5, pitch: 0.42, dist: 11.5 };
 
 // 배우 치수 (m)
@@ -850,9 +1012,9 @@ camAim.layers.set(1); scene.add(camAim);
 const roomGroup = new THREE.Group(), ROOM_GEO = new THREE.PlaneGeometry(1, 1);
 const roomMat = new THREE.MeshStandardMaterial({ color: TONES[0].face, roughness: 1, metalness: 0, side: THREE.DoubleSide });
 const roomPart = () => { const m = new THREE.Mesh(ROOM_GEO, roomMat); m.receiveShadow = true; roomGroup.add(m); return m; };
-const roomFloor = roomPart(), roomCeil = roomPart(), roomBack = roomPart(), roomLeft = roomPart(), roomRight = roomPart();
+const roomFloor = roomPart(), roomCeil = roomPart(), roomBack = roomPart(), roomFront = roomPart(), roomLeft = roomPart(), roomRight = roomPart();
 roomFloor.rotation.x = -Math.PI / 2; roomCeil.rotation.x = Math.PI / 2;
-roomBack.rotation.y = Math.PI; roomLeft.rotation.y = Math.PI / 2; roomRight.rotation.y = -Math.PI / 2;
+roomBack.rotation.y = Math.PI; roomFront.layers.set(3); roomLeft.rotation.y = Math.PI / 2; roomRight.rotation.y = -Math.PI / 2;
 scene.add(roomGroup);
 
 // 사용자 조명과 배치 화면 전용 조명 표시.
@@ -964,6 +1126,7 @@ function syncStructure() {
   roomFloor.position.set(0, 0.006, 0); roomFloor.scale.set(Rm.w, Rm.d, 1);
   roomCeil.visible = Rm.ceiling; roomCeil.position.set(0, Rm.h, 0); roomCeil.scale.set(Rm.w, Rm.d, 1);
   roomBack.position.set(0, Rm.h / 2, -rd); roomBack.scale.set(Rm.w, Rm.h, 1);
+  roomFront.position.set(0, Rm.h / 2, rd); roomFront.scale.set(Rm.w, Rm.h, 1);
   roomLeft.position.set(-rw, Rm.h / 2, 0); roomLeft.scale.set(Rm.d, Rm.h, 1);
   roomRight.position.set(rw, Rm.h / 2, 0); roomRight.scale.set(Rm.d, Rm.h, 1);
   grid.visible = state.out.grid;
@@ -1374,7 +1537,7 @@ function studioPanel() {
     h += numField('f-rh', '천장 높이', 2, 12, 0.1);
     h += `<label class="check" for="f-rceiling"><input type="checkbox" id="f-rceiling"${r.ceiling ? ' checked' : ''}> 천장 표시</label>`;
     h += '<div class="field name"><span class="note">벽 밝기</span><div class="seg" role="group" aria-label="실내 벽 밝기">' + TONES.map(t => `<button type="button" data-roomtone="${t.id}" aria-pressed="${r.tone === t.id}">${t.name}</button>`).join('') + '</div></div>';
-    h += '<p class="note">앞쪽 벽은 열려 있어 배치 카메라가 방 안을 보기 쉽습니다.</p>';
+    h += '<p class="note">배치 화면에서는 앞벽을 숨기지만 카메라 화면과 내보내기에서는 앞벽까지 있는 고정 룸 박스로 보입니다. 카메라는 방 안에 두세요.</p>';
   }
   h += rangeField('f-ambient', '환경광', 0, 2, 0.02) + rangeField('f-sun', '기본 방향광', 0, 2, 0.02);
   return h + '</section>';
@@ -1523,6 +1686,19 @@ function camLookAtCast() {
   toast(n > 1 ? `배우 ${n}명의 가운데를 보게 했습니다. 이제 돌기 프리셋을 누르면 그 둘레를 돕니다.` : '배우를 보게 했습니다. 이제 돌기 프리셋을 누르면 그 둘레를 돕니다.');
 }
 function newScene() { replaceScene(blankScene()); toast('빈 장면을 열었습니다. 실행 취소로 되돌릴 수 있습니다.'); }
+function openSceneTemplates() {
+  setPlaying(false);
+  const w = $('#scene-room-width'); if (w) w.value = String(r2(clamp(state.room && state.room.w || 8, 6, 20)));
+  $('#scene-modal').hidden = false;
+}
+function closeSceneTemplates() { $('#scene-modal').hidden = true; }
+function chooseSceneTemplate(id) {
+  if (id === 'blank') newScene();
+  else if (id === 'table4') startTableFourRoom(parseFloat($('#scene-room-width').value));
+  else if (id === 'sample') { replaceScene(sampleScene()); toast('동선 예제 장면을 열었습니다. 실행 취소로 되돌릴 수 있습니다.'); }
+  else return;
+  closeSceneTemplates();
+}
 
 /* 배경 상자 */
 const r1 = v => Math.round(v * 10) / 10;
@@ -1572,6 +1748,25 @@ function addThreePointRig() {
     newLight(nums[2], '림 라이트', 'spot', '#fff0d2', 1.8, [0.8, 3.4, -3.5], [0, 1.25, 0]),
   ];
   state.lights.push(...rig); sel = rig[0].id; commit(); mark('struct', 'panel'); toast('키·필·림 3점 조명을 추가했습니다.');
+}
+function startTableFourRoom(width) {
+  const w = r2(clamp(isFinite(width) ? width : 8, 6, 20)), d = r2(clamp(w * 0.75, 6, 12)), h = 3;
+  const s = blankScene(); s.sample = false; s.room = { enabled: true, w, d, h, tone: 'light', ceiling: true };
+  s.lighting = { ambient: 0.34, sun: 0.12 };
+  const seated = () => { const p = REST(); p[6] = p[8] = 88; p[7] = p[9] = 92; p[0] = p[3] = 35; p[2] = p[5] = 72; return p; };
+  const seats = [[0, -1.28, 0], [1.45, 0, -90], [0, 1.28, 180], [-1.45, 0, 90]];
+  s.actors = seats.map((q, i) => ({ id: newId(), num: i + 1, name: `참석자 ${i + 1}`, color: TAPE[i], size: SIZE1(),
+    limbs: { head: true, spine: true, la: true, ra: true, legs: true }, autoWalk: false, keys: [newKey(0, q[0], q[1], q[2], seated(), 0.36)] }));
+  let bn = 1; s.boxes = [newBox(bn++, 0, 0, 0, 2.2, 0.75, 1.15, { name: '회의 테이블', tone: 'mid', lock: true })];
+  for (const [x, z, rot] of seats) s.boxes.push(newBox(bn++, x, z, rot, 0.55, 0.45, 0.55, { name: `의자 ${bn - 2}`, tone: 'dark', lock: true }));
+  const camX = r2(Math.min(2.6, w * 0.3)), camZ = r2(d / 2 - 0.75);
+  s.camera.keys = [{ t: 0, pos: [camX, 1.55, camZ], tgt: [0, 1.02, 0] }];
+  s.lights = [
+    newLight(1, '테이블 키 라이트', 'spot', '#ffd8aa', 2.1, [2.4, 2.65, 2.1], [0, 0.9, 0]),
+    newLight(2, '테이블 필 라이트', 'spot', '#c7ddff', 1.2, [-2.4, 2.35, 1.2], [0, 0.9, 0]),
+    newLight(3, '천장등', 'point', '#fff2d6', 1.05, [0, 2.65, 0], [0, 1, 0]),
+  ];
+  replaceScene(s); sel = 'cam'; mark('struct', 'panel'); toast(`폭 ${w}m 실내에 테이블 4인 기본 세트를 만들었습니다. 실행 취소로 이전 장면을 복구할 수 있습니다.`);
 }
 const BOX_FIELD = {
   'f-bx': ['x', -BOX_LIM, BOX_LIM], 'f-bz': ['z', -BOX_LIM, BOX_LIM], 'f-by': ['y', 0, BOX_Y_MAX], 'f-brot': ['rot', -180, 180],
@@ -1842,7 +2037,9 @@ $('#tab-cam').addEventListener('click', () => setView('cam'));
 $('#pip').addEventListener('click', () => setView('cam'));
 $('#btn-undo').addEventListener('click', undo);
 $('#btn-redo').addEventListener('click', redo);
-$('#btn-new').addEventListener('click', newScene);
+$('#btn-new').addEventListener('click', openSceneTemplates);
+$('#scene-cancel').addEventListener('click', closeSceneTemplates);
+$('#scene-modal').addEventListener('click', e => { const b = e.target.closest('[data-scene-template]'); if (b) chooseSceneTemplate(b.dataset.sceneTemplate); });
 $('#btn-play').addEventListener('click', () => setPlaying(!playing));
 $('#btn-start').addEventListener('click', () => { setPlaying(false); setTime(0); });
 $('#btn-prevkey').addEventListener('click', () => jumpKey(-1));
@@ -1859,20 +2056,48 @@ $('#file-load').addEventListener('change', e => {
   if (!f) return;
   const rd = new FileReader();
   rd.onload = () => {
-    try { const obj = normalize(JSON.parse(String(rd.result))); obj.sample = false; replaceScene(obj); toast('장면을 불러왔습니다.'); }
+    try { const obj = normalize(JSON.parse(String(rd.result))); obj.sample = false; stopBoardAuto(); boardPack = null; boardIndex = -1; updateBoardUI(); replaceScene(obj); toast('장면을 불러왔습니다.'); }
     catch (_) { toast('장면 파일이 아닙니다. 장면 저장으로 만든 .json 파일을 골라 주세요.'); }
   };
   rd.onerror = () => toast('파일을 읽지 못했습니다.');
   rd.readAsText(f);
 });
+$('#btn-pack-load').addEventListener('click', () => $('#file-pack').click());
+$('#file-pack').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { installBoardPack(JSON.parse(String(rd.result))); }
+    catch (_) { toast('콘티 팩 파일이 아닙니다. scenes 배열이 있는 JSON을 골라 주세요.'); }
+  };
+  rd.onerror = () => toast('콘티 팩을 읽지 못했습니다.');
+  rd.readAsText(f);
+});
+$('#btn-pack-save').addEventListener('click', () => {
+  if (!boardPack) return;
+  saveBoardCurrent(); persistBoardPack();
+  saveFile('hexa-previs-board-pack.json', JSON.stringify({ ...boardPack, currentIndex: boardIndex }, null, 1));
+});
+$('#btn-shot-prev').addEventListener('click', () => { stopBoardAuto(); loadBoardScene(boardIndex - 1); });
+$('#btn-shot-next').addEventListener('click', () => { stopBoardAuto(); loadBoardScene(boardIndex + 1); });
+$('#shot-select').addEventListener('change', e => { stopBoardAuto(); loadBoardScene(Number(e.target.value)); });
+$('#btn-shot-auto').addEventListener('click', toggleBoardAuto);
 
 window.addEventListener('keydown', e => {
   if (!state) return;
-  const modalOpen = !$('#export-modal').hidden;
-  if (e.key === 'Escape' && modalOpen && !exporting) { closeExport(); return; }
+  const exportOpen = !$('#export-modal').hidden, sceneOpen = !$('#scene-modal').hidden, modalOpen = exportOpen || sceneOpen;
+  if (e.key === 'Escape' && sceneOpen) { closeSceneTemplates(); return; }
+  if (e.key === 'Escape' && exportOpen && !exporting) { closeExport(); return; }
   const t = e.target, tag = t && t.tagName || '';
   const typing = (tag === 'INPUT' && t.type !== 'range' && t.type !== 'checkbox') || tag === 'TEXTAREA' || tag === 'SELECT';
   if (typing || exporting || modalOpen) return;
+  if (boardPack && e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault(); stopBoardAuto(); loadBoardScene(boardIndex + (e.key === 'ArrowRight' ? 1 : -1)); return;
+  }
+  if (boardPack && (e.key === 'PageUp' || e.key === 'PageDown')) {
+    e.preventDefault(); stopBoardAuto(); loadBoardScene(boardIndex + (e.key === 'PageDown' ? 1 : -1)); return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space' && tag !== 'BUTTON') { e.preventDefault(); setPlaying(!playing); }
@@ -2069,6 +2294,7 @@ function start(data) {
   if (data && (data.view === 'cam' || data.view === 'edit')) view = data.view;
   resize(); mark('struct', 'panel');
   requestAnimationFrame(frame);
+  setTimeout(restoreOrLoadBoardPack, 0);
 }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {
   if (!state) return;
