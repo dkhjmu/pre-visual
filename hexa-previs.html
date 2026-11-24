@@ -273,7 +273,12 @@ details.limb[open] > summary{margin-bottom:6px}
     <h2 id="ex-title">내보내기</h2>
     <div class="stack" id="ex-setup">
       <p class="note">영상은 카메라 화면을 0초부터 끝까지, 이미지는 지금 시간의 한 장면을 만듭니다. 번호 표시와 색은 패널의 출력 화면 설정을, 비율은 카메라 설정을 따릅니다.</p>
-      <p class="note" id="ex-ratio"></p>
+      <p class="note" id="ex-ratio"></p><details id="ai-export"><summary>AI 이미지 생성 패키지</summary>
+<label for="ai-desc">장면 설명 / 스타일</label><textarea id="ai-desc" rows="4" style="width:100%;box-sizing:border-box" placeholder="장면, 캐릭터 외형, 그림체 등을 입력"></textarea>
+<label for="ai-map">인물 번호 매핑 (한 줄에 한 명)</label><textarea id="ai-map" rows="4" style="width:100%;box-sizing:border-box"></textarea>
+<label><input type="checkbox" id="ai-json" checked> 프롬프트에 전체 JSON 포함</label>
+<div class="rowbtns" style="flex-wrap:wrap"><button class="btn" id="ai-copy-text">프롬프트 복사</button><button class="btn" id="ai-copy-png">PNG 복사</button><button class="btn" id="ai-copy-both">PNG + 텍스트 복사</button><button class="btn" id="ai-zip">ZIP 저장</button><button class="btn" id="ai-chat">ChatGPT 열기</button></div>
+<p class="note">ChatGPT에 붙여넣거나 ZIP을 풀어 PNG와 JSON을 첨부하세요. 동시 복사는 붙여넣기 앱에 따라 하나만 전달될 수 있습니다.</p><p class="note" id="ai-status" role="status"></p></details>
       <div class="field">
         <label for="ex-res">해상도</label>
         <select id="ex-res">
@@ -2211,6 +2216,8 @@ function openExport() {
   setPlaying(false);
   $('#ex-res').innerHTML = shotAspect().res.map(([w, h], i) => `<option value="${w}x${h}"${i === 0 ? ' selected' : ''}>${w} × ${h}</option>`).join('');
   $('#ex-ratio').textContent = `화면 비율 ${shotAspect().id} (${shotAspect().hint})`;
+  $('#ai-map').value = state.actors.map(a => a.num + ': ' + (a.name || '')).join('\n');
+  $('#ai-status').textContent = '';
   showEx('setup'); $('#export-modal').hidden = false;
 }
 function closeExport() { const v = $('#ex-video'); try { v.pause(); } catch (_) { /* 재생 중이 아님 */ } $('#export-modal').hidden = true; }
@@ -2315,6 +2322,60 @@ async function exportImage() {
   if (blob && blob.size) saveFile(`hexa-previs-${tc(time).replace(/:/g, '')}.png`, blob);
   else toast('이미지를 만들지 못했습니다. 해상도를 낮춰 다시 시도해 주세요.');
 }
+
+/* AI export: same camera renderer as PNG/video, no external upload */
+const aiStatus = msg => { $('#ai-status').textContent = msg; };
+try { $('#ai-desc').value = localStorage.getItem('hexa-ai-desc') || ''; } catch (_) {}
+$('#ai-desc').addEventListener('input', () => { try { localStorage.setItem('hexa-ai-desc', $('#ai-desc').value); } catch (_) {} });
+function aiData(){
+  const json=JSON.stringify(state,null,2);
+  const prompt=['Create a finished illustration, not a redraw of the block mannequins. Use the attached PREVIS PNG as the strict composition reference. Preserve camera projection, lens distortion, actor positions, relative sizes, poses, gaze, occlusion and table orientation. Replace numbered mannequins with the mapped characters; add only requested appearance, materials and background details. Do not rearrange the scene.',
+    'Scene / style:\n'+$('#ai-desc').value,
+    'Actor mapping:\n'+$('#ai-map').value,
+    'Frame time: '+time.toFixed(3)+' s; camera: '+JSON.stringify(state.camera),
+    $('#ai-json').checked?'PREVIS JSON:\n'+json:'See scene.json for scene data.'].join('\n\n');
+  return {json,prompt};
+}
+async function aiPng(){
+  if(exporting) throw Error('다른 내보내기가 진행 중입니다.');
+  const [w,h]=$('#ex-res').value.split('x').map(Number);
+  exporting=true;
+  try {
+    if(dirty.struct) syncStructure();
+    renderer.setPixelRatio(1); renderer.setSize(w,h,false); drawExportFrame(time,w,h);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    if(!blob) throw Error('PNG 생성 실패');
+    return blob;
+  } finally { exporting=false; resize(); mark('ui'); }
+}
+// Uncompressed ZIP (CRC32, UTF-8 names), no CDN dependency.
+async function aiZip(files){
+  const enc=new TextEncoder(), parts=[], central=[]; let offset=0, total=0;
+  function crc(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return (c^0xffffffff)>>>0;}
+  for(const [name,blob] of files){
+    const n=enc.encode(name), b=new Uint8Array(await blob.arrayBuffer()), c=crc(b);
+    const l=new Uint8Array(30+n.length), v=new DataView(l.buffer);
+    v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x800,true);v.setUint32(14,c,true);v.setUint32(18,b.length,true);v.setUint32(22,b.length,true);v.setUint16(26,n.length,true);l.set(n,30);
+    const d=new Uint8Array(46+n.length), z=new DataView(d.buffer);
+    z.setUint32(0,0x02014b50,true);z.setUint16(4,20,true);z.setUint16(6,20,true);z.setUint16(8,0x800,true);z.setUint32(16,c,true);z.setUint32(20,b.length,true);z.setUint32(24,b.length,true);z.setUint16(28,n.length,true);z.setUint32(42,offset,true);d.set(n,46);
+    parts.push(l,b);central.push(d);offset+=l.length+b.length;total+=d.length;
+  }
+  const end=new Uint8Array(22), e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,total,true);e.setUint32(16,offset,true);
+  return new Blob([...parts,...central,end],{type:'application/zip'});
+}
+function aiRun(fn){return async()=>{try{await fn();}catch(err){aiStatus('실패: '+err.message+' — ZIP 저장을 이용해 주세요.');}};}
+$('#ai-copy-text').addEventListener('click',aiRun(async()=>{await navigator.clipboard.writeText(aiData().prompt);aiStatus('프롬프트 복사 완료');}));
+function aiClipboard(both){return aiRun(async()=>{
+  if(!navigator.clipboard?.write || typeof ClipboardItem==='undefined')throw Error('이미지 클립보드 미지원');
+  const data=aiData(), png=aiPng(), items={'image/png':png};
+  if(both)items['text/plain']=Promise.resolve(new Blob([data.prompt],{type:'text/plain'}));
+  await navigator.clipboard.write([new ClipboardItem(items)]);aiStatus(both?'PNG와 텍스트 복사 완료 (앱별 붙여넣기 지원 확인)':'PNG 복사 완료');
+});}
+$('#ai-copy-png').addEventListener('click',aiClipboard(false));
+$('#ai-copy-both').addEventListener('click',aiClipboard(true));
+$('#ai-zip').addEventListener('click',aiRun(async()=>{const d=aiData(),png=await aiPng();const zip=await aiZip([['previs.png',png],['scene.json',new Blob([d.json])],['prompt.txt',new Blob([d.prompt])]]);await saveFile('hexa-ai-package.zip',zip);aiStatus('ZIP 저장 요청 완료');}));
+$('#ai-chat').addEventListener('click',()=>{window.open('https://chatgpt.com/','_blank','noopener,noreferrer');});
+
 $('#ex-image').addEventListener('click', exportImage);
 $('#ex-video').addEventListener('error', e => { e.target.hidden = true; });
 $('#btn-export').addEventListener('click', openExport);
