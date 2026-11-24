@@ -478,7 +478,7 @@ function sampleScene() {
     out: { numbers: true, tape: false, grid: true },
     room: { enabled: false, w: 8, d: 10, h: 3, tone: 'light', ceiling: true },
     lighting: { ambient: 0.62, sun: 0.45 }, lights: [],
-    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 1, aspect: '16:9', keys: [
+    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 1, barrel: 0, aspect: '16:9', keys: [
       { t: 0, pos: [0.5, 1.55, 9], tgt: [0, 1.1, 1] },
       { t: 8, pos: [2.2, 1.5, 5.2], tgt: [1.1, 1.2, 1] },
     ] },
@@ -502,7 +502,7 @@ function blankScene() {
     out: { numbers: true, tape: false, grid: true },
     room: { enabled: false, w: 8, d: 10, h: 3, tone: 'light', ceiling: true },
     lighting: { ambient: 0.62, sun: 0.45 }, lights: [],
-    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 1, aspect: '16:9', keys: [{ t: 0, pos: [0, 1.55, 8], tgt: [0, 1.1, 0] }] },
+    camera: { ease: true, arc: true, lens: 35, fishFov: 130, fishStrength: 1, barrel: 0, aspect: '16:9', keys: [{ t: 0, pos: [0, 1.55, 8], tgt: [0, 1.1, 0] }] },
     actors: [{ id: newId(), num: 1, name: '', color: TAPE[0], size: SIZE1(), limbs: { head: false, spine: false, la: false, ra: false, legs: false }, autoWalk: true, keys: [newKey(0, 0, 0, 0)] }],
     boxes: [],
   };
@@ -567,7 +567,7 @@ function normalize(o) {
     v: 1, sample: !!o.sample, duration: clamp(Math.round(num(o.duration, 8)), 1, 120),
     out: { numbers: out.numbers !== false, tape: !!out.tape, grid: out.grid !== false },
     camera: { ease: o.camera.ease !== false, arc: o.camera.arc !== false, lens: lensValid(o.camera.lens) ? o.camera.lens : 35,
-      fishFov: clamp(num(o.camera.fishFov, 130), 100, 170), fishStrength: clamp(num(o.camera.fishStrength, 1), 0, 1),
+      fishFov: clamp(num(o.camera.fishFov, 130), 100, 170), fishStrength: clamp(num(o.camera.fishStrength, 1), 0, 1), barrel: clamp(num(o.camera.barrel, 0), 0, 1),
       aspect: ASPECTS.some(a => a.id === o.camera.aspect) ? o.camera.aspect : '16:9', keys: ckeys },
     actors, boxes, room, lighting, lights,
   };
@@ -1038,17 +1038,18 @@ function disposeLightVisual(v) {
 let fishTarget = null, fishCube = null;
 const fishScene = new THREE.Scene(), fishCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const fishMat = new THREE.ShaderMaterial({
-  uniforms: { tCube: { value: null }, maxTheta: { value: 1.13446 }, strength: { value: 1 }, aspect: { value: 16/9 } },
+  uniforms: { tCube: { value: null }, maxTheta: { value: 1.13446 }, strength: { value: 1 }, barrel: { value: 0 }, aspect: { value: 16/9 } },
   vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
   fragmentShader: `
     uniform samplerCube tCube;
-    uniform float maxTheta, strength, aspect;
+    uniform float maxTheta, strength, aspect, barrel;
     varying vec2 vUv;
     void main(){
       // 긴 변의 화각을 기준으로 픽셀 단위의 원형 대칭을 유지한다.
       vec2 p=(vUv*2.0-1.0)*vec2(min(1.0,aspect),min(1.0,1.0/aspect));
       float r=length(p);
-      float theta=mix(atan(r*tan(maxTheta)),r*maxTheta,clamp(strength,0.0,1.0));
+      float rd=r*(1.0+0.45*barrel*r*r)/(1.0+0.45*barrel*(1.0+pow(min(aspect,1.0/aspect),2.0)));
+      float theta=mix(atan(rd*tan(maxTheta)),rd*maxTheta,clamp(strength,0.0,1.0));
       vec2 axis=r>0.00001?p/r:vec2(0.0);
       vec3 ray=vec3(axis*sin(theta),-cos(theta));
       gl_FragColor=textureCube(tCube,ray);
@@ -1218,12 +1219,48 @@ function prepShot(aspect, output) {
   if (output && !state.out.numbers) shotCam.layers.disable(2); else shotCam.layers.enable(2);
 }
 function setVP(r, H) { renderer.setViewport(r.x, H - r.y - r.h, r.w, r.h); renderer.setScissor(r.x, H - r.y - r.h, r.w, r.h); }
+let barrelTarget = null;
+const barrelScene = new THREE.Scene();
+const barrelMat = new THREE.ShaderMaterial({
+  uniforms: { image: { value: null }, strength: { value: 0 }, aspect: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
+  fragmentShader: `
+    uniform sampler2D image;
+    uniform float strength, aspect;
+    varying vec2 vUv;
+    void main(){
+      vec2 scale=vec2(min(1.0,aspect),min(1.0,1.0/aspect));
+      vec2 p=(vUv*2.0-1.0)*scale;
+      float k=0.45*strength;
+      vec2 q=p*(1.0+k*dot(p,p))/(1.0+k*dot(scale,scale));
+      gl_FragColor=texture2D(image,q/scale*0.5+0.5);
+      #include <encodings_fragment>
+    }`,
+  depthTest:false, depthWrite:false
+});
+barrelScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),barrelMat));
+function renderBarrel(r,H){
+  const w=Math.max(1,Math.round(r.w*renderer.getPixelRatio())), h=Math.max(1,Math.round(r.h*renderer.getPixelRatio()));
+  if(!barrelTarget) barrelTarget=new THREE.WebGLRenderTarget(w,h,{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+  else if(barrelTarget.width!==w||barrelTarget.height!==h) barrelTarget.setSize(w,h);
+  renderer.setRenderTarget(barrelTarget);
+  renderer.setScissorTest(false);
+  renderer.setClearColor(BG,1);
+  renderer.render(scene,shotCam);
+  renderer.setRenderTarget(null);
+  renderer.setScissorTest(true);
+  barrelMat.uniforms.image.value=barrelTarget.texture;
+  barrelMat.uniforms.strength.value=state.camera.barrel;
+  barrelMat.uniforms.aspect.value=r.w/r.h;
+  setVP(r,H); renderer.render(barrelScene,fishCam);
+}
 function renderShot(r, H, output) {
   prepShot(r.w / r.h, output);
-  if (state.camera.lens !== 'fisheye') { setVP(r, H); renderer.render(scene, shotCam); return; }
+  if (state.camera.lens !== 'fisheye') { if(state.camera.barrel>0) renderBarrel(r,H); else { setVP(r, H); renderer.render(scene, shotCam); } return; }
   const rt = ensureFishTarget(r.w, r.h);
   fishMat.uniforms.maxTheta.value = state.camera.fishFov * D2R / 2;
   fishMat.uniforms.strength.value = state.camera.fishStrength;
+  fishMat.uniforms.barrel.value = state.camera.barrel || 0;
   fishMat.uniforms.aspect.value = r.w / r.h;
   shotCam.updateMatrixWorld(true);
   fishCube.position.copy(shotCam.position);
@@ -1485,6 +1522,7 @@ function camInspector() {
   h += '<div class="stack-s"><span class="note">렌즈</span><div class="seg" role="group" aria-label="렌즈">' + LENSES.map(l => `<button type="button" data-lens="${l.id}" title="${l.tip || ''}" aria-pressed="${state.camera.lens === l.id}">${l.name}</button>`).join('') + '</div></div>';
   if (state.camera.lens === 'fisheye') h += rangeField('f-fishfov', '어안 화각', 100, 170, 1) + rangeField('f-fishstrength', '왜곡 강도', 0, 1, 0.05)
     + '<p class="note">긴 변 기준 화각입니다. 기본값 130°·1은 등거리 어안, 왜곡 0은 일반 원근 투영입니다. 검은 원형 테두리 없이 카메라 화면, 이미지, 영상에 같은 투영을 적용합니다.</p>';
+  h += rangeField('f-barrel', '배럴 왜곡', 0, 1, 0.05) + '<p class="note">모든 렌즈에 적용되는 독립 왜곡입니다. 0은 없음, 1은 강한 배럴 효과이며 검은 테두리를 방지하도록 자동 크롭합니다.</p>';
   const asp = shotAspect();
   h += `<div class="stack-s"><span class="note">화면 비율 · ${asp.hint}</span><div class="seg" role="group" aria-label="화면 비율">` + ASPECTS.map(a => `<button type="button" data-aspect="${a.id}" title="${a.hint}" aria-pressed="${a.id === asp.id}">${a.id}</button>`).join('') + '</div></div>';
   h += `<label class="check" for="f-ease"><input type="checkbox" id="f-ease"${state.camera.ease ? ' checked' : ''}> 첫 키에서 부드럽게 출발, 마지막 키에서 부드럽게 멈춤</label>`;
@@ -1836,7 +1874,7 @@ function environmentField(t, final) {
   f[0][f[1]] = r2(clamp(v, f[2], f[3])); mark('struct', 'ui'); if (final) commit(); return true;
 }
 function cameraLensField(t, final) {
-  const f = { 'f-fishfov': ['fishFov', 100, 170], 'f-fishstrength': ['fishStrength', 0, 1] }[t.id];
+  const f = { 'f-fishfov': ['fishFov', 100, 170], 'f-fishstrength': ['fishStrength', 0, 1], 'f-barrel': ['barrel', 0, 1] }[t.id];
   if (!f) return false; const v = parseFloat(t.value); if (!isFinite(v)) return true;
   state.camera[f[0]] = r2(clamp(v, f[1], f[2])); mark('ui'); if (final) commit(); return true;
 }
@@ -2048,7 +2086,7 @@ function syncUI() {
   }
   setNum('f-rw', state.room.w); setNum('f-rd', state.room.d); setNum('f-rh', state.room.h);
   setRange('f-ambient', r2(state.lighting.ambient), ''); setRange('f-sun', r2(state.lighting.sun), '');
-  setRange('f-fishfov', Math.round(state.camera.fishFov), '°'); setRange('f-fishstrength', r2(state.camera.fishStrength), '');
+  setRange('f-fishfov', Math.round(state.camera.fishFov), '°'); setRange('f-fishstrength', r2(state.camera.fishStrength), ''); setRange('f-barrel', r2(state.camera.barrel || 0), '');
   const ks = $('#keystate');
   if (ks) { ks.textContent = has ? '키 있음' : '키 없음'; ks.classList.toggle('has', has); }
   const del = $('#btn-delkey'); if (del) del.disabled = !has || count < 2;
