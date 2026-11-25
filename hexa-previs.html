@@ -276,6 +276,7 @@ details.limb[open] > summary{margin-bottom:6px}
       <p class="note" id="ex-ratio"></p><details id="ai-export"><summary>AI 이미지 생성 패키지</summary>
 <label for="ai-desc">장면 설명 / 스타일</label><textarea id="ai-desc" rows="4" style="width:100%;box-sizing:border-box" placeholder="장면, 캐릭터 외형, 그림체 등을 입력"></textarea>
 <label for="ai-map">인물 번호 매핑 (한 줄에 한 명)</label><textarea id="ai-map" rows="4" style="width:100%;box-sizing:border-box"></textarea>
+<label for="ai-contact">접촉 관계 직접 지정 (선택, 자동 추정보다 우선)</label><textarea id="ai-contact" rows="3" style="width:100%;box-sizing:border-box" placeholder="1: 바닥에 양반다리로 앉음, 의자 없음&#10;2: 손을 테이블 위에 올림"></textarea>
 <label><input type="checkbox" id="ai-json" checked> 프롬프트에 전체 JSON 포함</label>
 <div class="rowbtns" style="flex-wrap:wrap"><button class="btn" id="ai-copy-text">프롬프트 복사</button><button class="btn" id="ai-copy-png">PNG 복사</button><button class="btn" id="ai-copy-both">PNG + 텍스트 복사</button><button class="btn" id="ai-guide">투시 가이드 복사</button><button class="btn" id="ai-zip">ZIP 저장</button><button class="btn" id="ai-chat">ChatGPT 열기</button></div>
 <p class="note">ChatGPT에 붙여넣거나 ZIP을 풀어 PNG와 JSON을 첨부하세요. 동시 복사는 붙여넣기 앱에 따라 하나만 전달될 수 있습니다.</p><p class="note" id="ai-status" role="status"></p></details>
@@ -2217,6 +2218,7 @@ function openExport() {
   $('#ex-res').innerHTML = shotAspect().res.map(([w, h], i) => `<option value="${w}x${h}"${i === 0 ? ' selected' : ''}>${w} × ${h}</option>`).join('');
   $('#ex-ratio').textContent = `화면 비율 ${shotAspect().id} (${shotAspect().hint})`;
   $('#ai-map').value = state.actors.map(a => a.num + ': ' + (a.name || '')).join('\n');
+  $('#ai-contact').value = '';
   $('#ai-status').textContent = '';
   showEx('setup'); $('#export-modal').hidden = false;
 }
@@ -2341,11 +2343,61 @@ function aiGeometry(){
   const pitch=Math.atan2(c.pos[1]-c.tgt[1],Math.hypot(c.pos[0]-c.tgt[0],c.pos[2]-c.tgt[2]))/D2R;
   return {c,w,h,fish,barrel,vp,pitch,ref,linear:!fish&&barrel===0};
 }
+function aiActorGeometry(a,g){
+  const v=vis.get(a.id); if(!v)return {};
+  const point=o=>o.getWorldPosition(new THREE.Vector3());
+  const vec=p=>p.toArray().map(r2);
+  const project=p=>{if(!g.linear)return undefined;const q=p.clone().project(g.ref);return [r2((q.x+1)/2),r2((1-q.y)/2)];};
+  const facing=o=>{
+    const pos=point(o), forward=new THREE.Vector3(0,0,1).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()));
+    const toward=new THREE.Vector3().fromArray(g.c.pos).sub(pos);
+    forward.y=0;toward.y=0;forward.normalize();toward.normalize();
+    const angle=Math.acos(clamp(forward.dot(toward),-1,1))/D2R;
+    return {angleFromCameraDegrees:r2(angle),visibility:angle<30?'front':angle<70?'front three-quarter':angle<110?'side':angle<150?'rear three-quarter':'back'};
+  };
+  const pelvis=new THREE.Vector3(0,v.dims.hip,0).applyMatrix4(v.group.matrixWorld);
+  const chest=point(v.chest), head=point(v.head.root);
+  const landmarks={pelvis:{world:vec(pelvis),screen:project(pelvis)},chest:{world:vec(chest),screen:project(chest)}};
+  if(a.limbs.head)landmarks.headPivot={world:vec(head),screen:project(head)};
+  const contacts=[], candidates=[];
+  const eps=.09*v.dims.sy;
+  if(a.limbs.legs){
+    const knees=[point(v.legL.joint),point(v.legR.joint)],feet=[point(v.legL.end),point(v.legR.end)];
+    const hips=[point(v.legL.root),point(v.legR.root)];
+    landmarks.knees=knees.map(p=>({world:vec(p),screen:project(p)}));
+    landmarks.feet=feet.map(p=>({world:vec(p),screen:project(p)}));
+    const lowPelvis=pelvis.y<=Math.max(.16*v.dims.sy,eps);
+    if(lowPelvis)contacts.push('Low pelvis near floor: preserve floor-level seated height; do not add a chair or elevated seat unless explicitly specified.');
+    knees.forEach((p,i)=>{if(Math.abs(p.y)<=eps)contacts.push((i?'Right':'Left')+' knee near floor.');});
+    feet.forEach((p,i)=>{if(Math.abs(p.y)<=eps)contacts.push((i?'Right':'Left')+' foot near floor.');});
+    for(const b of state.boxes){
+      const dx=pelvis.x-b.x,dz=pelvis.z-b.z,rad=b.rot*D2R;
+      const x=dx*Math.cos(rad)-dz*Math.sin(rad),z=dx*Math.sin(rad)+dz*Math.cos(rad);
+      if(Math.abs(x)<=b.w/2+eps&&Math.abs(z)<=b.d/2+eps&&Math.abs(pelvis.y-(b.y+b.h))<=eps)candidates.push({object:b.name||('box '+b.num),relation:'pelvis near top surface; possible seated support'});
+    }
+    const spread=knees[0].distanceTo(knees[1])>hips[0].distanceTo(hips[1])+eps;
+    if(lowPelvis&&spread)contacts.push('Knees spread outward; preserve actual leg arrangement, do not assume crossed legs.');
+  }
+  for(const [enabled,chain,label] of [[a.limbs.la,v.armL,'Left'],[a.limbs.ra,v.armR,'Right']]){
+    if(!enabled)continue;
+    const hand=point(chain.tip),elbow=point(chain.joint);
+    landmarks[label.toLowerCase()+'Hand']={world:vec(hand),screen:project(hand)};
+    for(const [p,part] of [[hand,'hand'],[elbow,'elbow']]){
+      if(Math.abs(p.y)<=eps)contacts.push(label+' '+part+' near floor.');
+      for(const b of state.boxes){
+        const dx=p.x-b.x,dz=p.z-b.z,rad=b.rot*D2R;
+        if(Math.abs(dx*Math.cos(rad)-dz*Math.sin(rad))<=b.w/2+eps&&Math.abs(dx*Math.sin(rad)+dz*Math.cos(rad))<=b.d/2+eps&&Math.abs(p.y-b.y-b.h)<=eps)candidates.push({object:b.name||('box '+b.num),relation:label+' '+part+' near top surface'});
+      }
+    }
+  }
+  return {torsoFacing:facing(v.chest),headFacing:a.limbs.head?facing(v.head.root):undefined,landmarks,contacts,candidates};
+}
 function aiData(){
   const g=aiGeometry(), cam=state.camera, json=JSON.stringify(state,null,2);
   const metadata={projection:g.fish?'fisheye':'rectilinear',aspect:cam.aspect,position:g.c.pos,target:g.c.tgt,pitchDownDegrees:r2(g.pitch),barrel:g.barrel};
   if(g.fish){metadata.fisheyeFov=cam.fishFov;metadata.fisheyeStrength=cam.fishStrength;}else{metadata.focalLengthMm=cam.lens;metadata.verticalFovDegrees=r2(g.ref.fov);}
   if(g.linear)metadata.vanishingPoints=g.vp.map(v=>({axis:v.axis,normalizedXY:v.point,parallelDirection:v.point?undefined:v.direction}));
+  if(dirty.struct)syncStructure(); applyTime(time); scene.updateMatrixWorld(true);
   const groups={head:['head'],spine:['waist','chest'],la:['la'],ra:['ra'],legs:['ll','rl']};
   const actors=state.actors.map(a=>{
     const q=sampleActor(a,time), p=finalPose(a,q,time), joints={};
@@ -2353,6 +2405,7 @@ function aiData(){
     const projected=g.linear?new THREE.Vector3(q.x,q.y,q.z).project(g.ref):null;
     return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,enabledJointAnglesDegrees:joints,unspecifiedLimbs:Object.keys(groups).filter(k=>!a.limbs[k]),groundAnchorNormalizedXY:projected?[r2((projected.x+1)/2),r2((1-projected.y)/2)]:undefined};
   });
+  const spatial=state.actors.map(a=>({actor:a.num,...aiActorGeometry(a,g)}));
   const prompt=[
     'PRIMARY TASK\nCreate a finished illustration, not a redraw of block mannequins. Treat the PREVIS PNG as a strict geometric blueprint, not loose inspiration.',
     'CAMERA AND PROJECTION LOCK\n'+JSON.stringify(metadata,null,2)+'\n'+(g.linear?'Fisheye DISABLED; barrel distortion NONE. Straight 3D edges must project as straight lines. Vanishing points use normalized image coordinates, origin top-left; points outside the frame are intentional; null means parallel projected lines.':'Use only the specified active projection and distortion consistently across the entire scene. Do not use straight-line vanishing-point constraints on nonlinear projections.'),
@@ -2360,8 +2413,10 @@ function aiData(){
     'REFERENCE PRIORITY\nPREVIS PNG: geometry, placement and visible pose. Character reference sheets: identity, hair, face, clothing only; do not transfer their pose or camera. JSON: supporting scene metadata, not permission to rearrange.',
     'ACTOR MAPPING\n'+$('#ai-map').value,
     'POSE CONSTRAINTS\n'+JSON.stringify(actors,null,2)+'\nJoint keys: sw=forward swing, sp=side spread, el=elbow, tw=twist, wr=wrist, hip=hip flexion, knee=knee flexion, ank=ankle, turn=head yaw, nod=head pitch, tilt=head roll, bend=forward bend, side=side bend. Unspecified limbs are not locked joint poses: infer natural anatomy consistent with furniture and visible silhouette. Do not invent pointing, reaching or dramatic torso twists. Ground anchors are world-position projections, not head or body centers.',
+    'ORIENTATION LOCK\n'+JSON.stringify(spatial.map(({actor,torsoFacing,headFacing,landmarks})=>({actor,torsoFacing,headFacing,landmarks})),null,2)+'\nFront/front three-quarter means show chest and front of clothing, not the back. Head direction is independent of torso. Screen landmarks are normalized top-left coordinates; off-frame values are intentional. Preserve actual body height and visible silhouette.',
+    'CONTACT LOCK\n'+JSON.stringify(spatial.map(({actor,contacts,candidates})=>({actor,contacts,candidates})),null,2)+'\nAutomatic contacts are proximity estimates, not proven physical contact. Candidates must be checked against visible pose. Do not invent seats, crossed legs or gestures. Explicit user contact instructions take precedence over automatic estimates.\nUser contact instructions:\n'+($('#ai-contact').value.trim()||'None specified.'),
     'SCENE / STYLE\n'+($('#ai-desc').value.trim()||'Use the supplied character references and scene context; keep additions restrained.'),
-    'FINAL VALIDATION\nCheck shared perspective, correct character mapping, natural spine/pelvis alignment, no furniture intersections, no invented gestures and no unintended distortion.',
+    'FINAL VALIDATION\nCheck shared perspective, correct character mapping, natural spine/pelvis alignment, no furniture intersections, correct torso/head visibility, correct floor or seat support, no invented gestures and no unintended distortion.',
     'Frame time: '+time.toFixed(3)+' s',
     $('#ai-json').checked?'PREVIS JSON (inactive camera fields are not instructions):\n'+json:'See scene.json if supplied.'
   ].join('\n\n');
