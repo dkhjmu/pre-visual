@@ -528,6 +528,17 @@ function cleanDance(doc){
  const body={};for(const [k,v] of Object.entries({height:1.65,headScale:1,shoulderWidth:1,armLength:1,legLength:1,hipWidth:1}))body[k]=Number.isFinite(doc.body?.[k])?clamp(doc.body[k],.4,2.5):v;
  return {projectType:'hexa-dance-pose',skeletonVersion:'humanoid-v1',body,bones};
 }
+function cleanDanceKeys(keys){return (Array.isArray(keys)?keys:[]).slice(0,1000).map(k=>({t:snapT(clamp(Number.isFinite(k?.t)?k.t:0,0,600)),pose:cleanDance(k?.pose)})).filter(k=>k.pose).sort((a,b)=>a.t-b.t).filter((k,i,arr)=>!i||k.t-arr[i-1].t>=EPS);}
+function danceSample(a,t){
+ const keys=a.danceKeys||[];if(!keys.length)return a.dance;
+ const [l,r,u]=seg(keys,t),bones={};const identity=[0,0,0,1];
+ for(const id of new Set([...Object.keys(l.pose.bones),...Object.keys(r.pose.bones)])){
+ const q=new THREE.Quaternion().fromArray(l.pose.bones[id]?.rotation||identity);
+ q.slerp(new THREE.Quaternion().fromArray(r.pose.bones[id]?.rotation||identity),u);
+ bones[id]={rotation:q.toArray()};
+ }
+ return {...a.dance,bones};
+}
 function normalize(o) {
   if (!o || typeof o !== 'object' || !Array.isArray(o.actors) || !o.camera || !Array.isArray(o.camera.keys) || !o.camera.keys.length) throw new Error('장면 형식이 아님');
   const num = (v, d = 0) => (typeof v === 'number' && isFinite(v)) ? v : d;
@@ -548,7 +559,7 @@ function normalize(o) {
       id, num: n, name: typeof a.name === 'string' ? a.name.slice(0, 24) : '',
       color: /^#[0-9a-fA-F]{6}$/.test(a.color) ? a.color : TAPE[(n - 1) % TAPE.length],
       size: { x: sz('x'), y: sz('y'), z: sz('z') },
-      limbs: { head: !!L.head, spine: !!L.spine, la: !!L.la, ra: !!L.ra, legs: !!L.legs }, autoWalk: a.autoWalk !== false, keys, dance:cleanDance(a.dance),
+      limbs: { head: !!L.head, spine: !!L.spine, la: !!L.la, ra: !!L.ra, legs: !!L.legs }, autoWalk: a.autoWalk !== false, keys, dance:cleanDance(a.dance), danceKeys:cleanDanceKeys(a.danceKeys),
     };
   }).sort((p, q) => p.num - q.num);
   const v3 = (v, d) => (Array.isArray(v) && v.length === 3) ? v.map((c, i) => clamp(num(c, d[i]), -200, 200)) : d.slice();
@@ -1249,6 +1260,7 @@ function applyTime(t) {
     const v = vis.get(a.id); if (!v) continue;
     const s = sampleActor(a, t), p = finalPose(a, s, t);
     v.group.position.set(s.x, 0, s.z); v.group.rotation.y = s.rot * D2R;
+    if(v.danceRig&&a.danceKeys?.length){const rig=v.danceRig,pose=danceSample(a,t);for(const [id,b] of rig.bones){b.quaternion.fromArray(pose.bones[id]?.rotation||[0,0,0,1]);}rig.root.position.y=0;v.group.updateMatrixWorld(true);const bounds=new THREE.Box3().setFromObject(rig.root);rig.root.position.y=-bounds.min.y;}
     v.armL.root.rotation.set(-p[0] * D2R, -p[18] * D2R, p[1] * D2R); v.armL.joint.rotation.x = -p[2] * D2R; v.armL.tip.rotation.x = -p[20] * D2R;
     v.armR.root.rotation.set(-p[3] * D2R, p[19] * D2R, -p[4] * D2R); v.armR.joint.rotation.x = -p[5] * D2R; v.armR.tip.rotation.x = -p[21] * D2R;
     v.legL.root.rotation.set(-p[6] * D2R, p[24] * D2R, p[22] * D2R); v.legL.joint.rotation.x = p[7] * D2R; v.legL.tip.rotation.x = footPitch(p[7] - p[6], p[26]);
@@ -1685,7 +1697,7 @@ function buildPanel() {
   for (const a of state.actors)
     h += `<li><button type="button" class="cast-row${sel === a.id ? ' on' : ''}" data-sel="${a.id}"><span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span><span class="meta">${limbsLabel(a)}</span></button></li>`;
   h += '</ul><button type="button" class="btn wide" id="btn-add-actor">+ 배우 추가</button></section>';
-  if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 기존 관절 슬라이더는 간편 모델에만 적용':'DANCE에서 저장한 humanoid-v1 JSON을 불러옵니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
+  if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 포즈 키 '+(A.danceKeys||[]).map(k=>tc(k.t)).join(', ')+' · JSON을 다시 불러오면 현재 시간에 키 등록':'DANCE JSON을 현재 시간의 관절 키프레임으로 등록합니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
   else if (sel === 'cam') h += camInspector();
   else if (!B && !L) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
   h += boxList();
@@ -1699,7 +1711,7 @@ function buildPanel() {
     + `<label class="check" for="o-grid"><input type="checkbox" id="o-grid"${o.grid ? ' checked' : ''}> 바닥 격자 (1칸 1m)</label>`
     + '<p class="note">카메라 화면과 내보낸 영상에 적용됩니다. 배치 화면에서는 번호가 항상 보입니다.</p></section>';
   $('#panel-body').innerHTML = h;
-  if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);A.dance=pose;commit();mark('struct','panel');toast('정밀 포즈 적용 완료');}catch(err){toast(err.message);}};$('#dance-clear').onclick=()=>{delete A.dance;commit();mark('struct','panel');};}
+  if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);const t=snapT(time);if(!A.dance){A.dance=pose;A.danceKeys=[];}if(!A.danceKeys?.length&&t>EPS)A.danceKeys=[{t:0,pose:A.dance}];A.danceKeys=(A.danceKeys||[]).filter(k=>Math.abs(k.t-t)>=EPS);A.danceKeys.push({t,pose});A.danceKeys.sort((a,b)=>a.t-b.t);actorKeyAt(A,t,true);commit();mark('struct','panel','tl');toast(tc(t)+' 정밀 포즈 키 등록 완료');}catch(err){toast(err.message);}};$('#dance-clear').onclick=()=>{delete A.dance;delete A.danceKeys;commit();mark('struct','panel');};}
 }
 
 function addActor() {
@@ -1721,7 +1733,7 @@ function deleteKeyHere() {
   const keys = trackKeys(sel), i = keys.findIndex(k => Math.abs(k.t - time) < EPS);
   if (i < 0) { toast('이 시점에는 키가 없습니다.'); return; }
   if (keys.length < 2) { toast('마지막 키는 지울 수 없습니다.'); return; }
-  keys.splice(i, 1); commit(); mark('tl', 'paths', 'ui');
+  keys.splice(i, 1); const a=selActor();if(a?.danceKeys)a.danceKeys=a.danceKeys.filter(k=>Math.abs(k.t-time)>=EPS);commit(); mark('tl', 'paths', 'ui','panel');
 }
 function applyPose(A, id) {
   const P = POSES.find(p => p.id === id); if (!P) return;
@@ -2480,7 +2492,7 @@ function aiData(){
   const groups={head:['head'],spine:['waist','chest'],la:['la'],ra:['ra'],legs:['ll','rl']};
   const actors=state.actors.map(a=>{
     const q=sampleActor(a,time), p=finalPose(a,q,time), joints={};
-    if(a.dance)return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,rig:'humanoid-v1',dancePose:a.dance, instruction:'Use detailed rig landmarks and quaternion pose; ignore legacy block joint angles.'};
+    if(a.dance)return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,rig:'humanoid-v1',dancePose:danceSample(a,time), instruction:'Use detailed rig landmarks and quaternion pose; ignore legacy block joint angles.'};
     for(const [limb,names] of Object.entries(groups))if(a.limbs[limb])for(const name of names)joints[name]=Object.fromEntries(Object.entries(PIDX[name]).map(([k,i])=>[k,r2(p[i])]));
     const projected=g.linear?new THREE.Vector3(q.x,q.y,q.z).project(g.ref):null;
     return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,enabledJointAnglesDegrees:joints,unspecifiedLimbs:Object.keys(groups).filter(k=>!a.limbs[k]),groundAnchorNormalizedXY:projected?[r2((projected.x+1)/2),r2((1-projected.y)/2)]:undefined};
