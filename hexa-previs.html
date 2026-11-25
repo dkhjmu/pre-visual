@@ -1768,9 +1768,9 @@ function applyDanceCheer(A){
    const sign=side==='Left'?1:-1,active=side===st.side?st.punch:0;
    rot(side+'UpperArm',0,0,sign*(12+133*active));
    rot(side+'Forearm',-95*(1-active),0,0);
-   rot(side+'UpperLeg',st.bend,0,sign*5);
-   rot(side+'LowerLeg',-2*st.bend);
-   rot(side+'Foot',st.bend);
+   rot(side+'UpperLeg',-st.bend,0,sign*5);
+   rot(side+'LowerLeg',2*st.bend);
+   rot(side+'Foot',-st.bend);
   }
   return cleanDance({projectType:'hexa-dance-pose',skeletonVersion:'humanoid-v1',body,bones});
  };
