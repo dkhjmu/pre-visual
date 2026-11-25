@@ -514,6 +514,13 @@ function blankScene() {
   };
 }
 // 저장 파일이나 브라우저 저장소에서 온 데이터는 믿지 않고 형태를 다시 맞춘다
+function cleanDance(doc){
+ if(!doc||doc.projectType!=='hexa-dance-pose'||doc.skeletonVersion!=='humanoid-v1'||!doc.bones)return null;
+ const bones={};for(const [id,b] of Object.entries(doc.bones)){const q=b?.rotation;if(/^[A-Za-z0-9]{1,40}$/.test(id)&&Array.isArray(q)&&q.length===4&&q.every(Number.isFinite)&&Math.hypot(...q)>1e-8)bones[id]={rotation:q.map(x=>x/Math.hypot(...q))};}
+ if(!bones.Hips)return null;
+ const body={};for(const [k,v] of Object.entries({height:1.65,headScale:1,shoulderWidth:1,armLength:1,legLength:1,hipWidth:1}))body[k]=Number.isFinite(doc.body?.[k])?clamp(doc.body[k],.4,2.5):v;
+ return {projectType:'hexa-dance-pose',skeletonVersion:'humanoid-v1',body,bones};
+}
 function normalize(o) {
   if (!o || typeof o !== 'object' || !Array.isArray(o.actors) || !o.camera || !Array.isArray(o.camera.keys) || !o.camera.keys.length) throw new Error('장면 형식이 아님');
   const num = (v, d = 0) => (typeof v === 'number' && isFinite(v)) ? v : d;
@@ -534,7 +541,7 @@ function normalize(o) {
       id, num: n, name: typeof a.name === 'string' ? a.name.slice(0, 24) : '',
       color: /^#[0-9a-fA-F]{6}$/.test(a.color) ? a.color : TAPE[(n - 1) % TAPE.length],
       size: { x: sz('x'), y: sz('y'), z: sz('z') },
-      limbs: { head: !!L.head, spine: !!L.spine, la: !!L.la, ra: !!L.ra, legs: !!L.legs }, autoWalk: a.autoWalk !== false, keys,
+      limbs: { head: !!L.head, spine: !!L.spine, la: !!L.la, ra: !!L.ra, legs: !!L.legs }, autoWalk: a.autoWalk !== false, keys, dance:cleanDance(a.dance),
     };
   }).sort((p, q) => p.num - q.num);
   const v3 = (v, d) => (Array.isArray(v) && v.length === 3) ? v.map((c, i) => clamp(num(c, d[i]), -200, 200)) : d.slice();
@@ -927,6 +934,54 @@ function numTexture(n) {
 
 const vis = new Map();   // 배우 id → 3D 물체 묶음
 let pickables = [];
+function makeDanceRig(a,v){
+ const specs=[];function add(id,parent,pos,shape='joint',length=0){specs.push({id,parent,pos,shape,length})}
+add('Root',null,[0,0,0],'none');add('Hips','Root',[0,1.01,0],'pelvis');
+add('Spine','Hips',[0,.13,0],'torso',.16);add('Chest','Spine',[0,.19,0],'torso',.18);add('UpperChest','Chest',[0,.18,0],'torso',.14);
+add('Neck','UpperChest',[0,.14,0],'joint',.08);add('Head','Neck',[0,.15,0],'head');
+for(const side of ['Left','Right']){
+ const sign=side==='Left'?1:-1;
+ add(side+'Clavicle','UpperChest',[sign*.12,.075,0],'joint',.13);
+ add(side+'UpperArm',side+'Clavicle',[sign*.15,-.025,0],'limb',.29);
+ add(side+'Forearm',side+'UpperArm',[sign*.035,-.29,0],'limb',.26);
+ add(side+'Hand',side+'Forearm',[0,-.26,0],'hand',.09);
+ for(const [idx,finger] of ['Thumb','Index','Middle','Ring','Little'].entries()){
+  const x=sign*((idx-2)*.019);
+  const par=side+'Hand';
+  add(side+finger+'1',par,[x,-.078,idx===0?.025:0],'finger',.037);
+  add(side+finger+'2',side+finger+'1',[0,-.037,0],'finger',.029);
+  add(side+finger+'3',side+finger+'2',[0,-.029,0],'finger',.022);
+ }
+ add(side+'UpperLeg','Hips',[sign*.115,-.10,0],'limb',.43);
+ add(side+'LowerLeg',side+'UpperLeg',[0,-.43,0],'limb',.42);
+ add(side+'Foot',side+'LowerLeg',[0,-.42,0],'foot',.17);
+ add(side+'Toe',side+'Foot',[0,-.045,-.12],'toe',.08);
+}
+
+ const root=new THREE.Group(), bones=new Map(), meshes=[];
+ const sphere=new THREE.SphereGeometry(1,10,8),box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(.8,1,1,10);
+ const mesh=(g,geo,scale,pos)=>{const m=new THREE.Mesh(geo,v.mat);m.scale.set(...scale);m.position.set(...pos);m.castShadow=true;m.userData.actor=a.id;g.add(m);meshes.push(m);return m;};
+ const body=a.dance.body;
+ for(const sp of specs){
+  const g=new THREE.Group();(sp.parent?bones.get(sp.parent):root).add(g);bones.set(sp.id,g);
+  const arm=/Clavicle|UpperArm|Forearm|Hand|Thumb|Index|Middle|Ring|Little/.test(sp.id),leg=/UpperLeg|LowerLeg|Foot|Toe/.test(sp.id),m=arm?body.armLength:leg?body.legLength:1;
+  const p=sp.pos.slice();p[0]*=sp.id.includes('Clavicle')?body.shoulderWidth:sp.id.includes('UpperLeg')?body.hipWidth:m;p[1]*=m;p[2]*=m;g.position.fromArray(p);
+  const q=a.dance.bones[sp.id]?.rotation;if(q)g.quaternion.fromArray(q);
+  if(sp.shape==='none')continue;
+  const r=sp.shape==='finger'?.016:sp.shape==='head'?.095:.043;mesh(g,sphere,[r,r,r],[0,0,0]);
+  if(sp.shape==='head'){g.scale.setScalar(body.headScale);mesh(g,box,[.17,.20,.16],[0,.095,0]);mesh(g,box,[.10,.025,.02],[0,.12,-.087]);}
+  if(sp.shape==='pelvis')mesh(g,box,[.29,.15,.18],[0,-.025,0]);
+  if(sp.shape==='torso')mesh(g,box,[sp.id==='UpperChest'?.34:.27,sp.length,.19],[0,sp.length/2,0]);
+  if(sp.shape==='limb'||sp.shape==='finger'){const r=sp.shape==='finger'?.012:sp.id.includes('Leg')?.077:.052;mesh(g,cyl,[r,sp.length*m,r],[0,-sp.length*m/2,0]);}
+  if(sp.shape==='hand')mesh(g,box,[.105,.12,.042],[0,-.04,0]);
+  if(sp.shape==='foot')mesh(g,box,[.115,.085,.245],[0,-.045,-.08]);
+  if(sp.shape==='toe')mesh(g,box,[.11,.055,.11],[0,-.025,-.04]);
+ }
+ root.rotation.y=Math.PI;root.scale.set(body.height/1.65*a.size.x,body.height/1.65*a.size.y,body.height/1.65*a.size.z);
+ root.updateMatrixWorld(true);const bounds=new THREE.Box3().setFromObject(root);root.position.y=-bounds.min.y;
+ const label=new THREE.Mesh(PLANE_GEO,v.numMat);label.layers.set(2);label.scale.set(.18,.18,1);label.position.set(0,.09,-.11);label.rotation.y=Math.PI;bones.get('UpperChest').add(label);
+ v.group.add(root);return {root,bones,meshes,geometries:[sphere,box,cyl]};
+}
 function makeVisual(a) {
   const mat = new THREE.MeshStandardMaterial({ color: CLAY, flatShading: true, roughness: 0.95, metalness: 0 });
   const group = new THREE.Group();
@@ -966,7 +1021,7 @@ function makeVisual(a) {
   return { group, lower, mid, upper, waist, chest, mat, numMat, numF, numT, ring, ringMat, arrow, head, armL, armR, legL, legR, path, dots };
 }
 function disposeVisual(v) {
-  scene.remove(v.group, v.path, v.dots);
+  scene.remove(v.group, v.path, v.dots); if(v.danceRig)for(const g of v.danceRig.geometries)g.dispose();
   v.mat.dispose(); if (v.numMat.map) v.numMat.map.dispose(); v.numMat.dispose(); v.ringMat.dispose();
   v.path.geometry.dispose(); v.path.material.dispose(); v.dots.geometry.dispose(); v.dots.material.dispose();
 }
@@ -1113,6 +1168,10 @@ function syncStructure() {
     v.legL.root.visible = v.legR.root.visible = a.limbs.legs;
     const on = sel === a.id, rs = on ? 1.18 : 1;
     v.ringMat.opacity = on ? 1 : 0.55; v.ring.scale.set(rs * d.sx, 1, rs * d.sz); v.arrow.position.z = 0.5 * (d.sz - 1);
+    if(v.danceRig){v.group.remove(v.danceRig.root);for(const geo of v.danceRig.geometries)geo.dispose();v.danceRig=null;}
+    v.lower.visible=v.waist.visible=!a.dance;
+    v.legL.root.visible=v.legR.root.visible=!a.dance&&a.limbs.legs;
+    if(a.dance){v.danceRig=makeDanceRig(a,v);pickables.push(...v.danceRig.meshes);continue;}
     pickables.push(v.lower, v.mid, v.upper);
     if (a.limbs.head) pickables.push(...v.head.meshes);
     if (a.limbs.la) pickables.push(...v.armL.meshes);
@@ -1193,7 +1252,7 @@ function applyTime(t) {
     v.chest.rotation.set(p[15] * sp, p[17] * sp, -p[16] * sp);
     // 높이는 가장 낮은 곳(발바닥이나 무릎)의 높이. 다리를 굽히거나 벌리면 몸이 그만큼 내려가서 바닥에 닿는다
     let lift = s.y;
-    if (a.limbs.legs) {
+    if (a.limbs.legs && !a.dance) {
       v.group.updateMatrixWorld(true);
       const low = Math.min(worldY(v.legL.end), worldY(v.legL.joint), worldY(v.legR.end), worldY(v.legR.joint));
       lift -= clamp(low, 0, v.dims.hip - 0.02);
@@ -1619,7 +1678,7 @@ function buildPanel() {
   for (const a of state.actors)
     h += `<li><button type="button" class="cast-row${sel === a.id ? ' on' : ''}" data-sel="${a.id}"><span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span><span class="meta">${limbsLabel(a)}</span></button></li>`;
   h += '</ul><button type="button" class="btn wide" id="btn-add-actor">+ 배우 추가</button></section>';
-  if (A) h += actorInspector(A);
+  if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 기존 관절 슬라이더는 간편 모델에만 적용':'DANCE에서 저장한 humanoid-v1 JSON을 불러옵니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
   else if (sel === 'cam') h += camInspector();
   else if (!B && !L) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
   h += boxList();
@@ -1633,6 +1692,7 @@ function buildPanel() {
     + `<label class="check" for="o-grid"><input type="checkbox" id="o-grid"${o.grid ? ' checked' : ''}> 바닥 격자 (1칸 1m)</label>`
     + '<p class="note">카메라 화면과 내보낸 영상에 적용됩니다. 배치 화면에서는 번호가 항상 보입니다.</p></section>';
   $('#panel-body').innerHTML = h;
+  if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);A.dance=pose;commit();mark('struct','panel');toast('정밀 포즈 적용 완료');}catch(err){toast(err.message);}};$('#dance-clear').onclick=()=>{delete A.dance;commit();mark('struct','panel');};}
 }
 
 function addActor() {
@@ -2355,6 +2415,14 @@ function aiActorGeometry(a,g){
     const angle=Math.acos(clamp(forward.dot(toward),-1,1))/D2R;
     return {angleFromCameraDegrees:r2(angle),visibility:angle<30?'front':angle<70?'front three-quarter':angle<110?'side':angle<150?'rear three-quarter':'back'};
   };
+  if(v.danceRig){
+    const b=v.danceRig.bones,landmarks={};for(const [id,o] of b){const p=point(o);landmarks[id]={world:vec(p),screen:project(p)};}
+    const orient=o=>{const p=point(o),f=new THREE.Vector3(0,0,-1).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion())),t=new THREE.Vector3().fromArray(g.c.pos).sub(p);f.y=t.y=0;const angle=Math.acos(clamp(f.normalize().dot(t.normalize()),-1,1))/D2R;return {angleFromCameraDegrees:r2(angle),visibility:angle<30?'front':angle<70?'front three-quarter':angle<110?'side':angle<150?'rear three-quarter':'back'};};
+    const contacts=[],candidates=[],hip=point(b.get('Hips'));if(hip.y<.22)contacts.push('Low pelvis near floor; preserve floor-level pose.');
+    for(const id of ['LeftFoot','RightFoot','LeftLowerLeg','RightLowerLeg','LeftHand','RightHand']){const p=point(b.get(id));if(p.y<.12)contacts.push(id+' near floor.');}
+    for(const box of state.boxes){const dx=hip.x-box.x,dz=hip.z-box.z,r=box.rot*D2R;if(Math.abs(dx*Math.cos(r)-dz*Math.sin(r))<box.w/2+.1&&Math.abs(dx*Math.sin(r)+dz*Math.cos(r))<box.d/2+.1&&Math.abs(hip.y-box.y-box.h)<.16)candidates.push({object:box.name,relation:'pelvis near top surface'});}
+    return {torsoFacing:orient(b.get('UpperChest')),headFacing:orient(b.get('Head')),landmarks,contacts,candidates};
+  }
   const pelvis=new THREE.Vector3(0,v.dims.hip,0).applyMatrix4(v.group.matrixWorld);
   const chest=point(v.chest), head=point(v.head.root);
   const landmarks={pelvis:{world:vec(pelvis),screen:project(pelvis)},chest:{world:vec(chest),screen:project(chest)}};
@@ -2401,6 +2469,7 @@ function aiData(){
   const groups={head:['head'],spine:['waist','chest'],la:['la'],ra:['ra'],legs:['ll','rl']};
   const actors=state.actors.map(a=>{
     const q=sampleActor(a,time), p=finalPose(a,q,time), joints={};
+    if(a.dance)return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,rig:'humanoid-v1',dancePose:a.dance, instruction:'Use detailed rig landmarks and quaternion pose; ignore legacy block joint angles.'};
     for(const [limb,names] of Object.entries(groups))if(a.limbs[limb])for(const name of names)joints[name]=Object.fromEntries(Object.entries(PIDX[name]).map(([k,i])=>[k,r2(p[i])]));
     const projected=g.linear?new THREE.Vector3(q.x,q.y,q.z).project(g.ref):null;
     return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,enabledJointAnglesDegrees:joints,unspecifiedLimbs:Object.keys(groups).filter(k=>!a.limbs[k]),groundAnchorNormalizedXY:projected?[r2((projected.x+1)/2),r2((1-projected.y)/2)]:undefined};
