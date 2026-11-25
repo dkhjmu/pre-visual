@@ -277,7 +277,7 @@ details.limb[open] > summary{margin-bottom:6px}
 <label for="ai-desc">장면 설명 / 스타일</label><textarea id="ai-desc" rows="4" style="width:100%;box-sizing:border-box" placeholder="장면, 캐릭터 외형, 그림체 등을 입력"></textarea>
 <label for="ai-map">인물 번호 매핑 (한 줄에 한 명)</label><textarea id="ai-map" rows="4" style="width:100%;box-sizing:border-box"></textarea>
 <label><input type="checkbox" id="ai-json" checked> 프롬프트에 전체 JSON 포함</label>
-<div class="rowbtns" style="flex-wrap:wrap"><button class="btn" id="ai-copy-text">프롬프트 복사</button><button class="btn" id="ai-copy-png">PNG 복사</button><button class="btn" id="ai-copy-both">PNG + 텍스트 복사</button><button class="btn" id="ai-zip">ZIP 저장</button><button class="btn" id="ai-chat">ChatGPT 열기</button></div>
+<div class="rowbtns" style="flex-wrap:wrap"><button class="btn" id="ai-copy-text">프롬프트 복사</button><button class="btn" id="ai-copy-png">PNG 복사</button><button class="btn" id="ai-copy-both">PNG + 텍스트 복사</button><button class="btn" id="ai-guide">투시 가이드 복사</button><button class="btn" id="ai-zip">ZIP 저장</button><button class="btn" id="ai-chat">ChatGPT 열기</button></div>
 <p class="note">ChatGPT에 붙여넣거나 ZIP을 풀어 PNG와 JSON을 첨부하세요. 동시 복사는 붙여넣기 앱에 따라 하나만 전달될 수 있습니다.</p><p class="note" id="ai-status" role="status"></p></details>
       <div class="field">
         <label for="ex-res">해상도</label>
@@ -2327,14 +2327,64 @@ async function exportImage() {
 const aiStatus = msg => { $('#ai-status').textContent = msg; };
 try { $('#ai-desc').value = localStorage.getItem('hexa-ai-desc') || ''; } catch (_) {}
 $('#ai-desc').addEventListener('input', () => { try { localStorage.setItem('hexa-ai-desc', $('#ai-desc').value); } catch (_) {} });
+function aiGeometry(){
+  const c=sampleCam(time), cam=state.camera, [w,h]=$('#ex-res').value.split('x').map(Number);
+  const ratio=w/h, fish=cam.lens==='fisheye', barrel=Number(cam.barrel)||0;
+  const ref=new THREE.PerspectiveCamera(cameraFov(cam.lens,shotRatio(),cam.fishFov),ratio,0.01,1000);
+  ref.position.fromArray(c.pos); ref.lookAt(...c.tgt); ref.updateMatrixWorld(true);
+  const matrix=new THREE.Matrix4().multiplyMatrices(ref.projectionMatrix,ref.matrixWorldInverse);
+  const round=n=>Math.round(n*10000)/10000;
+  const vp=[[1,0,0],[0,1,0],[0,0,1]].map((d,i)=>{
+    const v=new THREE.Vector4(...d,0).applyMatrix4(matrix);
+    return {axis:['X','Y','Z'][i],point:Math.abs(v.w)<1e-8?null:[round((v.x/v.w+1)/2),round((1-v.y/v.w)/2)],direction:[v.x,-v.y]};
+  });
+  const pitch=Math.atan2(c.pos[1]-c.tgt[1],Math.hypot(c.pos[0]-c.tgt[0],c.pos[2]-c.tgt[2]))/D2R;
+  return {c,w,h,fish,barrel,vp,pitch,ref,linear:!fish&&barrel===0};
+}
 function aiData(){
-  const json=JSON.stringify(state,null,2);
-  const prompt=['Create a finished illustration, not a redraw of the block mannequins. Use the attached PREVIS PNG as the strict composition reference. Preserve camera projection, lens distortion, actor positions, relative sizes, poses, gaze, occlusion and table orientation. Replace numbered mannequins with the mapped characters; add only requested appearance, materials and background details. Do not rearrange the scene.',
-    'Scene / style:\n'+$('#ai-desc').value,
-    'Actor mapping:\n'+$('#ai-map').value,
-    'Frame time: '+time.toFixed(3)+' s; camera: '+JSON.stringify(state.camera),
-    $('#ai-json').checked?'PREVIS JSON:\n'+json:'See scene.json for scene data.'].join('\n\n');
+  const g=aiGeometry(), cam=state.camera, json=JSON.stringify(state,null,2);
+  const metadata={projection:g.fish?'fisheye':'rectilinear',aspect:cam.aspect,position:g.c.pos,target:g.c.tgt,pitchDownDegrees:r2(g.pitch),barrel:g.barrel};
+  if(g.fish){metadata.fisheyeFov=cam.fishFov;metadata.fisheyeStrength=cam.fishStrength;}else{metadata.focalLengthMm=cam.lens;metadata.verticalFovDegrees=r2(g.ref.fov);}
+  if(g.linear)metadata.vanishingPoints=g.vp.map(v=>({axis:v.axis,normalizedXY:v.point,parallelDirection:v.point?undefined:v.direction}));
+  const groups={head:['head'],spine:['waist','chest'],la:['la'],ra:['ra'],legs:['ll','rl']};
+  const actors=state.actors.map(a=>{
+    const q=sampleActor(a,time), p=finalPose(a,q,time), joints={};
+    for(const [limb,names] of Object.entries(groups))if(a.limbs[limb])for(const name of names)joints[name]=Object.fromEntries(Object.entries(PIDX[name]).map(([k,i])=>[k,r2(p[i])]));
+    const projected=g.linear?new THREE.Vector3(q.x,q.y,q.z).project(g.ref):null;
+    return {actor:a.num,worldPosition:[q.x,q.y,q.z],bodyYawDegrees:q.rot,enabledJointAnglesDegrees:joints,unspecifiedLimbs:Object.keys(groups).filter(k=>!a.limbs[k]),groundAnchorNormalizedXY:projected?[r2((projected.x+1)/2),r2((1-projected.y)/2)]:undefined};
+  });
+  const prompt=[
+    'PRIMARY TASK\nCreate a finished illustration, not a redraw of block mannequins. Treat the PREVIS PNG as a strict geometric blueprint, not loose inspiration.',
+    'CAMERA AND PROJECTION LOCK\n'+JSON.stringify(metadata,null,2)+'\n'+(g.linear?'Fisheye DISABLED; barrel distortion NONE. Straight 3D edges must project as straight lines. Vanishing points use normalized image coordinates, origin top-left; points outside the frame are intentional; null means parallel projected lines.':'Use only the specified active projection and distortion consistently across the entire scene. Do not use straight-line vanishing-point constraints on nonlinear projections.'),
+    'GLOBAL GEOMETRY LOCK\nUse one camera for foreground and background. Parallel world-space edges share the same vanishing direction. Room-aligned furniture, windows and shelves must follow the corresponding room axes. Respect each object rotation; do not assume rotated furniture is parallel to the room. Preserve table shape, actor positions, relative scale, occlusion and framing.',
+    'REFERENCE PRIORITY\nPREVIS PNG: geometry, placement and visible pose. Character reference sheets: identity, hair, face, clothing only; do not transfer their pose or camera. JSON: supporting scene metadata, not permission to rearrange.',
+    'ACTOR MAPPING\n'+$('#ai-map').value,
+    'POSE CONSTRAINTS\n'+JSON.stringify(actors,null,2)+'\nJoint keys: sw=forward swing, sp=side spread, el=elbow, tw=twist, wr=wrist, hip=hip flexion, knee=knee flexion, ank=ankle, turn=head yaw, nod=head pitch, tilt=head roll, bend=forward bend, side=side bend. Unspecified limbs are not locked joint poses: infer natural anatomy consistent with furniture and visible silhouette. Do not invent pointing, reaching or dramatic torso twists. Ground anchors are world-position projections, not head or body centers.',
+    'SCENE / STYLE\n'+($('#ai-desc').value.trim()||'Use the supplied character references and scene context; keep additions restrained.'),
+    'FINAL VALIDATION\nCheck shared perspective, correct character mapping, natural spine/pelvis alignment, no furniture intersections, no invented gestures and no unintended distortion.',
+    'Frame time: '+time.toFixed(3)+' s',
+    $('#ai-json').checked?'PREVIS JSON (inactive camera fields are not instructions):\n'+json:'See scene.json if supplied.'
+  ].join('\n\n');
   return {json,prompt};
+}
+async function aiGuide(){
+  const g=aiGeometry(); if(!g.linear)throw Error('투시 가이드는 왜곡 없는 일반 렌즈에서만 지원합니다.');
+  const cv=document.createElement('canvas');cv.width=g.w;cv.height=g.h;const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fafafa';ctx.fillRect(0,0,g.w,g.h);
+  const colors=['#d34b38','#15936b','#3268d1'];
+  ctx.lineWidth=Math.max(1,g.w/900);
+  const anchors=[[.2,.25],[.5,.25],[.8,.25],[.2,.55],[.5,.55],[.8,.55],[.2,.85],[.5,.85],[.8,.85]];
+  g.vp.forEach((v,i)=>{
+    ctx.strokeStyle=colors[i];ctx.globalAlpha=.45;
+    for(const [x,y] of anchors){
+      const dx=v.point?(v.point[0]-x)*g.w:v.direction[0]*g.w,dy=v.point?(v.point[1]-y)*g.h:v.direction[1]*g.h;
+      const len=Math.hypot(dx,dy);if(len<1e-8)continue;
+      const L=Math.hypot(g.w,g.h)*2;ctx.beginPath();ctx.moveTo(x*g.w-dx/len*L,y*g.h-dy/len*L);ctx.lineTo(x*g.w+dx/len*L,y*g.h+dy/len*L);ctx.stroke();
+    }
+  });
+  ctx.globalAlpha=1;ctx.font=Math.max(14,g.w/75)+'px sans-serif';
+  g.vp.forEach((v,i)=>{ctx.fillStyle=colors[i];ctx.fillText(v.axis+' VP: '+(v.point?v.point.join(', '):'parallel'),20,30+i*Math.max(20,g.w/55));});
+  return await new Promise((resolve,reject)=>cv.toBlob(b=>b?resolve(b):reject(Error('guide PNG failed')),'image/png'));
 }
 async function aiPng(){
   if(exporting) throw Error('다른 내보내기가 진행 중입니다.');
@@ -2373,7 +2423,8 @@ function aiClipboard(both){return aiRun(async()=>{
 });}
 $('#ai-copy-png').addEventListener('click',aiClipboard(false));
 $('#ai-copy-both').addEventListener('click',aiClipboard(true));
-$('#ai-zip').addEventListener('click',aiRun(async()=>{const d=aiData(),png=await aiPng();const zip=await aiZip([['previs.png',png],['scene.json',new Blob([d.json])],['prompt.txt',new Blob([d.prompt])]]);await saveFile('hexa-ai-package.zip',zip);aiStatus('ZIP 저장 요청 완료');}));
+$('#ai-zip').addEventListener('click',aiRun(async()=>{const d=aiData(),png=await aiPng();const files=[['previs.png',png],['scene.json',new Blob([d.json])],['prompt.txt',new Blob([d.prompt])]];if(aiGeometry().linear)files.push(['perspective-guide.png',await aiGuide()]);const zip=await aiZip(files);await saveFile('hexa-ai-package.zip',zip);aiStatus('ZIP 저장 요청 완료');}));
+$('#ai-guide').addEventListener('click',aiRun(async()=>{await navigator.clipboard.write([new ClipboardItem({'image/png':aiGuide()})]);aiStatus('투시 가이드 복사 완료');}));
 $('#ai-chat').addEventListener('click',()=>{window.open('https://chatgpt.com/','_blank','noopener,noreferrer');});
 
 $('#ex-image').addEventListener('click', exportImage);
