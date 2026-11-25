@@ -424,6 +424,13 @@ const POSES = [
   { id: 'wide', name: '다리 벌려 서기', set: { ll: { sp: 22 }, rl: { sp: 22 }, la: { sp: 25 }, ra: { sp: 25 } } },
 ];
 const PRESETS = [
+  { id: 'cheerhop', name: '치어: 원암 깡총', needs: ['la','ra','legs'], steps: Array.from({length:4},(_,i)=>[
+    {f:i*24,y:0,legs:[20,40],la:[-15,38,100],ra:[35,22,115]},
+    {f:i*24+5,y:0,legs:[0,0],la:[-15,38,100],ra:[125,35,12]},
+    {f:i*24+11,y:.19,legs:[8,16],la:[-15,38,100],ra:[145,38,5]},
+    {f:i*24+17,y:0,legs:[0,0],la:[-15,38,100],ra:[65,25,85]},
+    {f:i*24+21,y:0,legs:[25,50],la:[-15,38,100],ra:[35,22,115]}
+  ]).flat().concat([{f:96,y:0,legs:[20,40],la:[-15,38,100],ra:[35,22,115]}]) },
   { id: 'jump', name: '점프', steps: [
     { f: 0 }, { f: 4, legs: [40, 80], arms: [-35, 8, 10] }, { f: 7, legs: [0, 0], arms: [70, 8, 10] },
     { f: 14, y: 0.5, legs: [25, 50], arms: [120, 10, 10] }, { f: 21, legs: [10, 20], arms: [40, 10, 10] },
@@ -1729,6 +1736,8 @@ function applyPose(A, id) {
 }
 function applyPreset(A, id) {
   const P = PRESETS.find(p => p.id === id); if (!P) return;
+  if(id==='cheerhop' && A.dance){toast('치어 원암 깡총은 간편 모델용입니다. 간편 모델로 복귀 후 적용하세요.');return;}
+  if(id==='cheerhop' && state.duration<4){toast('장면 길이를 4초 이상으로 설정하세요.');return;}
   setPlaying(false);
   const attached = [];
   const need = k => { if (!A.limbs[k]) { A.limbs[k] = true; attached.push(LIMB_NAME[k]); } };
@@ -1745,6 +1754,8 @@ function applyPreset(A, id) {
     const put = (idx, vals) => vals.forEach((v, j) => { p[idx[j]] = v; });
     if (st.arm) put(JOINT[side], st.arm);
     if (st.arms) { put(JOINT.la, st.arms); put(JOINT.ra, st.arms); }
+    if(st.la) put(JOINT.la,st.la); if(st.ra) put(JOINT.ra,st.ra);
+    if(id==='cheerhop'){p[18]=75;p[19]=0;p[20]=p[21]=0;p[22]=p[23]=p[24]=p[25]=p[26]=p[27]=0;}
     if (st.legs) { put(JOINT.ll, st.legs); put(JOINT.rl, st.legs); }
     if (st.rleg) put(JOINT.rl, st.rleg);
     if (st.waist) put(JOINT.waist, st.waist);
