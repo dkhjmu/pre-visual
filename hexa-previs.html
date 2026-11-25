@@ -1697,7 +1697,7 @@ function buildPanel() {
   for (const a of state.actors)
     h += `<li><button type="button" class="cast-row${sel === a.id ? ' on' : ''}" data-sel="${a.id}"><span class="hexchip" style="--c:${a.color}">${a.num}</span><span class="nm${a.name ? '' : ' empty'}" data-name-of="${a.id}">${a.name ? esc(a.name) : '이름 없음'}</span><span class="meta">${limbsLabel(a)}</span></button></li>`;
   h += '</ul><button type="button" class="btn wide" id="btn-add-actor">+ 배우 추가</button></section>';
-  if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 포즈 키 '+(A.danceKeys||[]).map(k=>tc(k.t)).join(', ')+' · JSON을 다시 불러오면 현재 시간에 키 등록':'DANCE JSON을 현재 시간의 관절 키프레임으로 등록합니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
+  if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 포즈 키 '+(A.danceKeys||[]).map(k=>tc(k.t)).join(', ')+' · JSON을 다시 불러오면 현재 시간에 키 등록':'DANCE JSON을 현재 시간의 관절 키프레임으로 등록합니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-demo">정밀 예제: 팔 올렸다 내리기 (2초)</button><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
   else if (sel === 'cam') h += camInspector();
   else if (!B && !L) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
   h += boxList();
@@ -1711,7 +1711,7 @@ function buildPanel() {
     + `<label class="check" for="o-grid"><input type="checkbox" id="o-grid"${o.grid ? ' checked' : ''}> 바닥 격자 (1칸 1m)</label>`
     + '<p class="note">카메라 화면과 내보낸 영상에 적용됩니다. 배치 화면에서는 번호가 항상 보입니다.</p></section>';
   $('#panel-body').innerHTML = h;
-  if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);const t=snapT(time);if(!A.dance){A.dance=pose;A.danceKeys=[];}if(!A.danceKeys?.length&&t>EPS)A.danceKeys=[{t:0,pose:A.dance}];A.danceKeys=(A.danceKeys||[]).filter(k=>Math.abs(k.t-t)>=EPS);A.danceKeys.push({t,pose});A.danceKeys.sort((a,b)=>a.t-b.t);actorKeyAt(A,t,true);commit();mark('struct','panel','tl');toast(tc(t)+' 정밀 포즈 키 등록 완료');}catch(err){toast(err.message);}};$('#dance-clear').onclick=()=>{delete A.dance;delete A.danceKeys;commit();mark('struct','panel');};}
+  if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);const t=snapT(time);if(!A.dance){A.dance=pose;A.danceKeys=[];}if(!A.danceKeys?.length&&t>EPS)A.danceKeys=[{t:0,pose:A.dance}];A.danceKeys=(A.danceKeys||[]).filter(k=>Math.abs(k.t-t)>=EPS);A.danceKeys.push({t,pose});A.danceKeys.sort((a,b)=>a.t-b.t);actorKeyAt(A,t,true);commit();mark('struct','panel','tl');toast(tc(t)+' 정밀 포즈 키 등록 완료');}catch(err){toast(err.message);}};$('#dance-demo').onclick=()=>{if(A.danceKeys?.length&&!confirm('기존 정밀 포즈 키를 예제로 교체할까요?'))return;applyDanceDemo(A);};$('#dance-clear').onclick=()=>{delete A.dance;delete A.danceKeys;commit();mark('struct','panel');};}
 }
 
 function addActor() {
@@ -1745,6 +1745,16 @@ function applyPose(A, id) {
   actorKeyAt(A, time, true).p = p;
   commit(); mark('struct', 'panel', 'tl', 'ui');
   toast(`${tc(time)}에 '${P.name}' 포즈를 잡았습니다.` + (attached.length ? ` 관절(${attached.join(', ')})도 붙였습니다.` : ''));
+}
+function applyDanceDemo(A){
+ if(state.duration<2){toast('장면 길이를 2초 이상으로 설정하세요.');return;}
+ setPlaying(false);
+ const t0=snapT(Math.min(time,state.duration-2));
+ const make=(raised)=>{const bones={Hips:{rotation:[0,0,0,1]},RightUpperArm:{rotation:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,raised? -2.55:0)).toArray()},RightForearm:{rotation:[0,0,0,1]}};
+ return cleanDance({projectType:'hexa-dance-pose',skeletonVersion:'humanoid-v1',body:A.dance?.body,bones});};
+ const down=make(false),up=make(true);A.dance=down;A.danceKeys=[{t:t0,pose:down},{t:t0+1,pose:up},{t:t0+2,pose:down}];
+ for(const k of A.danceKeys)actorKeyAt(A,k.t,true);
+ commit();mark('struct','panel','tl','ui');setTime(t0);setPlaying(true);toast('정밀 팔 올리기 예제: 2초');
 }
 function applyPreset(A, id) {
   const P = PRESETS.find(p => p.id === id); if (!P) return;
