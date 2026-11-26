@@ -1,7 +1,7 @@
-# HEXA Studio — 통합 제작 환경 설계 v0.2
+# HEXA Studio — 통합 제작 환경 설계 v0.3
 
 작성일: 2026-11-26  
-상태: 설계 초안. 구현 및 로컬 환경 검증 전.
+상태: 브라우저 기반 Studio v0.1 초기 구현. 실제 Chrome/ComfyUI 검증 전.
 
 ## 1. 목표 및 결정 사항
 
@@ -159,4 +159,23 @@ Phase 1 완료 기준: start.bat으로 실행, 프로젝트 폴더 생성 및 �
 - Git LFS 원격 저장소 정책, 후보 파일 백업 정책.
 - 편집 타임라인 포맷과 외부 편집기 연동 범위.
 
-이번 커밋은 설계 기록만 추가한다. 기존 도구 수정, Studio 구현, 실행 검증은 수행하지 않는다.
+## 11. 공통 에셋 관리
+
+에셋 유형: characters, locations, props, actions, cameras, lighting, styles, workflows. 각 에셋은 독립 ID, asset.json, 참조 파일, 향후 썸네일/태그/버전을 가진다. 장소는 공간 구조와 배경 원화, 소품은 형상과 재질, 액션은 포즈 및 키프레임, 카메라/조명은 촬영 프리셋을 포함한다. 공용 라이브러리는 후속 구현하며 프로젝트에 가져온 에셋은 스냅샷으로 보존한다.
+
+제작 순서: 캐릭터 → 장소 → 씬/소품 배치 → 액션/표정/시선 → 카메라/조명 → 키이미지 → 영상 → 편집.
+
+## 12. 브라우저 우선 MVP
+
+hexa-studio.html을 기존 저장소에 추가한다. React/FastAPI 전환 전의 독립 HTML 프로토타입이다. Chrome/Edge의 File System Access API(showDirectoryPicker, createWritable)를 통해 HTTPS 또는 localhost에서 사용자 승인 폴더에 접근한다. 매 세션 폴더를 다시 선택한다. 브라우저 권한 및 파일 잠금 한계가 있으므로 서버 기반 동시 쓰기 제어는 후속 과제다.
+
+현재 구현 범위:
+- 프로젝트 폴더 선택, project.json 생성/열기/저장, 외부 변경 감지.
+- 24fps, 96프레임 기본 컷, 1~120프레임 조절. 초기에는 컷별 scenes/<cutId>/ 폴더를 사용하며 장면/컷 분리 모델은 후속 과제.
+- 프로젝트 assets/<type>/<id>/asset.json 및 원본 파일 저장, 디렉터리 스캔, 컷별 에셋 선택. 현재 유형마다 단일 에셋 선택이며 복수 캐스팅 및 배치 연동은 후속 과제.
+- 기존 DANCE, EXPRESSION, PREVIS iframe 연결. 탭 전환 시 기존 편집기에서 먼저 저장해야 한다. 자동 데이터 전달/postMessage는 아직 미구현.
+- 컷별 PREVIS/IMAGE/MOTION/EDITOR 결과 파일 수동 등록. 생성 또는 편집 엔진을 실행하지 않는다.
+- Git/FFmpeg/ComfyUI 실행, 백그라운드 작업 큐는 향후 HEXA Core에서 구현. 브라우저 자체는 임의 로컬 프로세스를 실행할 수 없다.
+
+다음 단계: Chrome 실사용 테스트, 에셋 복수 선택 및 썸네일/태그, 기존 편집기 데이터 브리지, 이후 Core API 및 작업 큐. 기존 HTML 자체는 이번 작업에서 변경하지 않는다.
+
