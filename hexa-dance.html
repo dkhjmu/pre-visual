@@ -5,7 +5,7 @@
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script></head>
 <body><header><strong>⬡ HEXA DANCE <small>v0.3</small></strong>
-<button id="reset">기본 포즈</button><button id="jessiePose" title="첨부된 이미지의 자세를 참고한 프리셋">참고 이미지 포즈</button><button id="undo" title="Ctrl+Z">↶ 실행 취소</button><button id="redo" title="Ctrl+Y">↷ 다시 실행</button>
+<button id="reset">기본 포즈</button><select id="examplePose" aria-label="예제 포즈"><optgroup label="일상"><option value="sit">의자에 앉기</option><option value="cross">다리 꼬고 앉기</option></optgroup><optgroup label="귀여운 포즈"><option value="cute">양손 볼 옆</option><option value="peace">브이 포즈</option><option value="shy">수줍게 손 모으기</option><option value="cheer">치어 V자</option></optgroup><optgroup label="개그·액션"><option value="otl">OTL 좌절</option><option value="kick">앞차기</option><option value="jessie">기존 참고 이미지 포즈</option></optgroup></select><button id="applyExample">예제 포즈 적용</button><button id="jessiePose" hidden>참고 이미지 포즈</button><button id="undo" title="Ctrl+Z">↶ 실행 취소</button><button id="redo" title="Ctrl+Y">↷ 다시 실행</button>
 <button id="save">JSON 저장</button><button id="loadbtn">JSON 불러오기</button><input type="file" id="load" accept=".json,application/json">
 <button id="png">PNG 출력</button><select id="resolution"><option value="1920x1080">1920×1080</option><option value="2560x1440">2560×1440</option></select></header>
 <main><aside><h3>관절 계층 <span id="count"></span></h3><input id="search" placeholder="관절 검색" style="width:100%"><div class="tree" id="tree"></div></aside>
@@ -205,6 +205,29 @@ $('jessiePose').onclick=()=>{
  camera.position.set(3.1,2.15,4.5);orbit.target.set(0,1.05,0);orbit.update();
  select('RightUpperArm');refreshAngles();
  status('참고 이미지 기반 3D 포즈를 적용했습니다. 단일 사진으로 정확한 깊이는 알 수 없어 근사한 자세입니다.');
+};
+// Rig faces local -Z. Negative hip X lifts the thigh forward; positive knee X bends backward.
+const examplePoses={
+ sit:{Hips:[0,0,0],LeftUpperLeg:[-90,0,5],RightUpperLeg:[-90,0,-5],LeftLowerLeg:[90,0,0],RightLowerLeg:[90,0,0],LeftUpperArm:[-25,0,8],RightUpperArm:[-25,0,-8],LeftForearm:[-35,0,0],RightForearm:[-35,0,0]},
+ cross:{Hips:[0,0,0],LeftUpperLeg:[-90,0,4],RightUpperLeg:[-105,0,25],LeftLowerLeg:[90,0,0],RightLowerLeg:[105,0,-15],LeftUpperArm:[-20,0,8],RightUpperArm:[-20,0,-8],LeftForearm:[-45,0,0],RightForearm:[-45,0,0]},
+ cute:{Head:[0,0,12],LeftUpperArm:[-35,0,40],RightUpperArm:[-35,0,-40],LeftForearm:[-125,0,-35],RightForearm:[-125,0,35],LeftHand:[0,0,-10],RightHand:[0,0,10],LeftUpperLeg:[-5,0,4],RightUpperLeg:[-12,0,-4],RightLowerLeg:[18,0,0]},
+ peace:{Head:[0,-10,-10],RightUpperArm:[-35,0,-60],RightForearm:[-115,0,35],LeftUpperArm:[0,0,25],LeftForearm:[-65,0,-20],RightUpperLeg:[-10,0,-8],RightLowerLeg:[15,0,0]},
+ shy:{Head:[12,0,8],Spine:[-5,0,0],LeftUpperArm:[-20,0,-8],RightUpperArm:[-20,0,8],LeftForearm:[-35,0,-15],RightForearm:[-35,0,15],LeftUpperLeg:[0,0,-4],RightUpperLeg:[0,0,4]},
+ cheer:{LeftUpperArm:[0,0,145],RightUpperArm:[0,0,-145],LeftUpperLeg:[0,0,12],RightUpperLeg:[0,0,-12]},
+ otl:{Hips:[-85,0,0],Spine:[-5,0,0],Head:[30,0,0],LeftUpperLeg:[85,0,8],RightUpperLeg:[85,0,-8],LeftLowerLeg:[90,0,0],RightLowerLeg:[90,0,0],LeftUpperArm:[85,0,5],RightUpperArm:[85,0,-5],LeftForearm:[-8,0,0],RightForearm:[-8,0,0]},
+ kick:{Spine:[8,0,0],RightUpperLeg:[-85,0,-5],RightLowerLeg:[8,0,0],RightFoot:[-10,0,0],LeftUpperLeg:[-5,0,0],LeftLowerLeg:[8,0,0],LeftUpperArm:[-35,0,45],RightUpperArm:[25,0,-40],LeftForearm:[-75,0,0],RightForearm:[-75,0,0]}
+};
+$('applyExample').onclick=()=>{
+ const id=$('examplePose').value;if(id==='jessie'){$('jessiePose').click();return;}
+ const pose=examplePoses[id];if(!pose)return;pushHistory();
+ for(const b of bones.values())b.group.quaternion.identity();
+ root.position.set(0,0,0);root.quaternion.identity();
+ for(const [name,xyz] of Object.entries(pose))bones.get(name).group.rotation.set(...xyz.map(THREE.MathUtils.degToRad),'XYZ');
+ if(id==='peace')for(const f of fingerNames)fingerCurl('Right',f,gesturePatterns.peace[f]);
+ root.updateMatrixWorld(true);
+ const bounds=new THREE.Box3();for(const b of bones.values())for(const m of b.mesh)bounds.expandByObject(m);
+ if(Number.isFinite(bounds.min.y))root.position.y=-bounds.min.y;
+ refreshAngles();refreshFingerSliders();status('예제 포즈 적용: '+$('examplePose').selectedOptions[0].textContent+' · 관절을 자유롭게 수정할 수 있습니다.');
 };
 $('jointReset').onclick=()=>{if(!selected)return;pushHistory();bones.get(selected).group.quaternion.identity();refreshAngles()};
 $('copy').onclick=()=>{clipboard=snapshot();status('포즈를 복사했습니다.')};$('paste').onclick=()=>{if(!clipboard)return;pushHistory();restore(clipboard);status('포즈를 붙여넣었습니다.')};
