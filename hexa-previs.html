@@ -750,8 +750,8 @@ function restore(json) {
   if (sel && sel !== 'cam' && !actorById(sel) && !boxById(sel) && !lightById(sel)) sel = null;
   resetVisuals(); persist(json); mark('struct', 'panel');
 }
-function undo() { if (undoStack.length < 2) return; redoStack.push(undoStack.pop()); restore(undoStack[undoStack.length - 1]); }
-function redo() { if (!redoStack.length) return; const j = redoStack.pop(); undoStack.push(j); restore(j); }
+function undo() { finishPrecise(); if (undoStack.length < 2) return; redoStack.push(undoStack.pop()); restore(undoStack[undoStack.length - 1]); }
+function redo() { finishPrecise(); if (!redoStack.length) return; const j = redoStack.pop(); undoStack.push(j); restore(j); }
 function replaceScene(obj) {
   state = obj; sel = null; time = 0; setPlaying(false); resetVisuals(); commit(true); mark('struct', 'panel');
 }
@@ -978,10 +978,10 @@ for(const side of ['Left','Right']){
 
  const root=new THREE.Group(), bones=new Map(), meshes=[];
  const sphere=new THREE.SphereGeometry(1,10,8),box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(.8,1,1,10);
- const mesh=(g,geo,scale,pos)=>{const m=new THREE.Mesh(geo,v.mat);m.scale.set(...scale);m.position.set(...pos);m.castShadow=true;m.userData.actor=a.id;g.add(m);meshes.push(m);return m;};
+ const mesh=(g,geo,scale,pos)=>{const m=new THREE.Mesh(geo,v.mat);m.scale.set(...scale);m.position.set(...pos);m.castShadow=true;m.userData.actor=a.id;m.userData.danceBone=g.userData.danceBone;g.add(m);meshes.push(m);return m;};
  const body=a.dance.body;
  for(const sp of specs){
-  const g=new THREE.Group();(sp.parent?bones.get(sp.parent):root).add(g);bones.set(sp.id,g);
+  const g=new THREE.Group();(sp.parent?bones.get(sp.parent):root).add(g);bones.set(sp.id,g);g.userData.danceBone=sp.id;
   const arm=/Clavicle|UpperArm|Forearm|Hand|Thumb|Index|Middle|Ring|Little/.test(sp.id),leg=/UpperLeg|LowerLeg|Foot|Toe/.test(sp.id),m=arm?body.armLength:leg?body.legLength:1;
   const p=sp.pos.slice();p[0]*=sp.id.includes('Clavicle')?body.shoulderWidth:sp.id.includes('UpperLeg')?body.hipWidth:m;p[1]*=m;p[2]*=m;g.position.fromArray(p);
   const q=a.dance.bones[sp.id]?.rotation;if(q)g.quaternion.fromArray(q);
@@ -1260,7 +1260,7 @@ function applyTime(t) {
     const v = vis.get(a.id); if (!v) continue;
     const s = sampleActor(a, t), p = finalPose(a, s, t);
     v.group.position.set(s.x, 0, s.z); v.group.rotation.y = s.rot * D2R;
-    if(v.danceRig&&a.danceKeys?.length){const rig=v.danceRig,pose=danceSample(a,t);for(const [id,b] of rig.bones){b.quaternion.fromArray(pose.bones[id]?.rotation||[0,0,0,1]);}rig.root.position.y=0;v.group.updateMatrixWorld(true);const bounds=new THREE.Box3().setFromObject(rig.root);rig.root.position.y=-bounds.min.y;}
+    if(v.danceRig&&a.dance){const rig=v.danceRig,pose=danceSample(a,t);for(const [id,b] of rig.bones){b.quaternion.fromArray(pose.bones[id]?.rotation||[0,0,0,1]);}rig.root.position.y=0;v.group.updateMatrixWorld(true);const bounds=new THREE.Box3().setFromObject(rig.root);rig.root.position.y=-bounds.min.y;}
     v.armL.root.rotation.set(-p[0] * D2R, -p[18] * D2R, p[1] * D2R); v.armL.joint.rotation.x = -p[2] * D2R; v.armL.tip.rotation.x = -p[20] * D2R;
     v.armR.root.rotation.set(-p[3] * D2R, p[19] * D2R, -p[4] * D2R); v.armR.joint.rotation.x = -p[5] * D2R; v.armR.tip.rotation.x = -p[21] * D2R;
     v.legL.root.rotation.set(-p[6] * D2R, p[24] * D2R, p[22] * D2R); v.legL.joint.rotation.x = p[7] * D2R; v.legL.tip.rotation.x = footPitch(p[7] - p[6], p[26]);
@@ -1391,10 +1391,11 @@ function layoutPip() {
 new ResizeObserver(() => { if (!exporting) resize(); }).observe(stage);
 
 /* ---------- 선택 · 시간 · 화면 ---------- */
-function select(id) { if (sel === id) return; sel = id; mark('struct', 'panel'); }
-function setTime(t) { time = clamp(snapT(t), 0, state.duration); mark('ui'); }
+function select(id) { if (sel === id) return; finishPrecise(); sel = id; mark('struct', 'panel'); }
+function setTime(t) { finishPrecise(); time = clamp(snapT(t), 0, state.duration); mark('ui'); }
 function setPlaying(p) {
   if (p === playing) return;
+  if(p) finishPrecise();
   if (p) { if (time >= state.duration - EPS) time = 0; playT0 = performance.now() - time * 1000; }
   else time = clamp(snapT(time), 0, state.duration);
   playing = p; mark('ui');
@@ -1422,7 +1423,7 @@ function pick(e) {
   const hits = ray.intersectObjects(pickables, false);
   if (!hits.length) return null;
   const h = hits[0], u = h.object.userData;
-  if (u.actor) { const a = actorById(u.actor); return a ? { kind: 'actor', item: a } : null; }
+  if (u.actor) { const a = actorById(u.actor); return a ? { kind: 'actor', item: a, bone: u.danceBone } : null; }
   if (u.light) { const l = lightById(u.light); return l && view === 'edit' ? { kind: 'light', item: l, point: h.point } : null; }
   const b = u.box ? boxById(u.box) : null;
   return (b && !b.lock && view === 'edit') ? { kind: 'box', item: b, point: h.point } : null;
@@ -1496,6 +1497,7 @@ canvas.addEventListener('pointerdown', e => {
   if (hit && hit.kind === 'actor') {
     const a = hit.item;
     setPlaying(false); select(a.id);
+    if(a.dance && preciseMode && hit.bone){preciseBone=hit.bone;gest=null;mark('panel','ui');return;}
     const g = groundPoint(e), s = sampleActor(a, time);
     gest = { mode: 'actor', id: a.id, ox: g ? s.x - g.x : 0, oz: g ? s.z - g.z : 0, moved: false, sx: e.clientX, sy: e.clientY };
   } else if (hit && hit.kind === 'box') {
@@ -1690,6 +1692,66 @@ function studioPanel() {
   h += rangeField('f-ambient', '환경광', 0, 2, 0.02) + rangeField('f-sun', '기본 방향광', 0, 2, 0.02);
   return h + '</section>';
 }
+// Detailed pose editing uses the same local XYZ Euler convention as DANCE.
+// A complete sampled quaternion pose is stored at the current timeline key.
+let preciseMode=false, preciseBone='RightHand', preciseEdit=null;
+const preciseSides=['Left','Right'];
+const preciseGroups=[
+ ['몸통 / 머리',['Root','Hips','Spine','Chest','UpperChest','Neck','Head']],
+ ...preciseSides.flatMap(side=>[
+ [side==='Left'?'왼팔':'오른팔',['Clavicle','UpperArm','Forearm','Hand'].map(n=>side+n)],
+ [side==='Left'?'왼손 손가락':'오른손 손가락',['Thumb','Index','Middle','Ring','Little'].flatMap(n=>[1,2,3].map(i=>side+n+i))],
+ [side==='Left'?'왼다리':'오른다리',['UpperLeg','LowerLeg','Foot','Toe'].map(n=>side+n)]])
+];
+function precisePanel(){
+ const opts=preciseGroups.map(([label,ids])=>'<optgroup label="'+label+'">'+ids.map(id=>'<option value="'+id+'"'+(id===preciseBone?' selected':'')+'>'+id+'</option>').join('')+'</optgroup>').join('');
+ return '<section class="sec"><h2>정밀 관절 편집</h2><label class="check"><input type="checkbox" id="precise-mode"'+(preciseMode?' checked':'')+'> 무대에서 관절 선택 (배우 이동 대신)</label><p class="note">현재 시간에 자세 키를 저장합니다. 카메라 및 배우 위치는 유지합니다. 관절 로컬 XYZ 회전 · 손가락 포함.</p><label for="precise-bone">관절</label><select id="precise-bone" style="width:100%">'+opts+'</select>'+['x','y','z'].map(axis=>'<div class="field"><label for="precise-'+axis+'">'+axis.toUpperCase()+' (°)</label><input id="precise-'+axis+'" type="range" min="-180" max="180" step="1" style="width:100%"><input id="precise-'+axis+'-num" type="number" min="-180" max="180" step="0.1" style="width:90px" aria-label="'+axis+' rotation"></div>').join('')+'<div class="rowbtns"><button class="btn" id="precise-reset">선택 관절 초기화</button><button class="btn" id="precise-key">현재 자세 키 저장</button></div><p class="note" id="precise-time"></p></section>';
+}
+function preciseAngles(a){
+ const q=danceSample(a,time)?.bones[preciseBone]?.rotation||[0,0,0,1];
+ const e=new THREE.Euler().setFromQuaternion(new THREE.Quaternion().fromArray(q),'XYZ');
+ return [e.x/D2R,e.y/D2R,e.z/D2R];
+}
+function syncPrecise(a){
+ if(!a?.dance||!$('#precise-bone'))return;
+ $('#precise-time').textContent=tc(time)+' · '+((a.danceKeys||[]).some(k=>Math.abs(k.t-time)<EPS)?'정밀 키 있음':'보간 자세');
+ const angles=preciseEdit?.actor===a&&preciseEdit.bone===preciseBone?preciseEdit.angles:preciseAngles(a);
+ ['x','y','z'].forEach((axis,i)=>{for(const suffix of ['','-num']){const el=$('#precise-'+axis+suffix);if(el&&document.activeElement!==el)el.value=Math.round(angles[i]*10)/10;}});
+}
+function storePrecise(a,pose,t){
+ if(!a.danceKeys?.length&&t>EPS)a.danceKeys=[{t:0,pose:sceneClone(a.dance)}];
+ a.danceKeys=(a.danceKeys||[]).filter(k=>Math.abs(k.t-t)>=EPS);
+ a.danceKeys.push({t,pose});a.danceKeys.sort((l,r)=>l.t-r.t);
+ actorKeyAt(a,t,true);mark('tl','paths','ui');
+}
+function beginPrecise(a){
+ setPlaying(false);
+ if(!preciseEdit||preciseEdit.actor!==a||preciseEdit.bone!==preciseBone||Math.abs(preciseEdit.t-time)>=EPS){
+ preciseEdit={actor:a,bone:preciseBone,t:snapT(time),angles:preciseAngles(a),pose:sceneClone(danceSample(a,time))};
+ }
+ return preciseEdit;
+}
+function updatePrecise(a,i,value){
+ if(!Number.isFinite(value)||!state.actors.includes(a)||sel!==a.id)return;
+ const e=beginPrecise(a);e.angles[i]=clamp(value,-180,180);
+ const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(...e.angles.map(v=>v*D2R),'XYZ'));
+ e.pose.bones[e.bone]={rotation:q.toArray()};storePrecise(a,sceneClone(e.pose),e.t);
+ syncPrecise(a);mark();
+}
+function finishPrecise(){if(preciseEdit){preciseEdit=null;commit();mark('ui');}}
+function bindPrecise(a){
+ if(!a.dance)return;
+ $('#precise-mode').onchange=e=>{finishPrecise();preciseMode=e.target.checked;};
+ $('#precise-bone').onchange=e=>{finishPrecise();preciseBone=e.target.value;syncPrecise(a);};
+ ['x','y','z'].forEach((axis,i)=>{
+ const slider=$('#precise-'+axis),num=$('#precise-'+axis+'-num');
+ slider.oninput=()=>updatePrecise(a,i,Number(slider.value));slider.onchange=finishPrecise;slider.onblur=finishPrecise;
+ num.onchange=()=>{if(num.value.trim()!==''&&Number.isFinite(Number(num.value)))updatePrecise(a,i,Number(num.value));finishPrecise();syncPrecise(a);};
+ });
+ $('#precise-reset').onclick=()=>{finishPrecise();setPlaying(false);const pose=sceneClone(danceSample(a,time));pose.bones[preciseBone]={rotation:[0,0,0,1]};storePrecise(a,pose,snapT(time));commit();syncPrecise(a);};
+ $('#precise-key').onclick=()=>{finishPrecise();setPlaying(false);storePrecise(a,sceneClone(danceSample(a,time)),snapT(time));commit();toast(tc(time)+' 정밀 자세 키 저장');};
+ syncPrecise(a);
+}
 function buildPanel() {
   const A = selActor(), B = selBox(), L = selLight(), o = state.out;
   let h = '<section class="sec"><h2>출연</h2><ul class="cast">';
@@ -1700,6 +1762,7 @@ function buildPanel() {
   if (A) h += actorInspector(A)+'<section class="sec"><h2>정밀 DANCE 포즈</h2><p class="note">'+(A.dance?'정밀 모델 적용 중 · 포즈 키 '+(A.danceKeys||[]).map(k=>tc(k.t)).join(', ')+' · JSON을 다시 불러오면 현재 시간에 키 등록':'DANCE JSON을 현재 시간의 관절 키프레임으로 등록합니다.')+'</p><input type="file" id="dance-import" accept=".json,application/json"><button class="btn wide" id="dance-demo">정밀 예제: 팔 올렸다 내리기 (2초)</button><button class="btn wide" id="dance-clear" '+(A.dance?'':'disabled')+'>간편 모델로 복귀</button></section>';
   else if (sel === 'cam') h += camInspector();
   else if (!B && !L) h += '<section class="sec"><p class="note">무대에서 기둥을 누르거나 위 목록에서 고르면, 여기에서 관절을 붙이고 자세를 바꿀 수 있습니다.</p></section>';
+  if(A?.dance) h += precisePanel();
   h += boxList();
   if (B) h += boxInspector(B);
   h += lightList();
@@ -1711,6 +1774,7 @@ function buildPanel() {
     + `<label class="check" for="o-grid"><input type="checkbox" id="o-grid"${o.grid ? ' checked' : ''}> 바닥 격자 (1칸 1m)</label>`
     + '<p class="note">카메라 화면과 내보낸 영상에 적용됩니다. 배치 화면에서는 번호가 항상 보입니다.</p></section>';
   $('#panel-body').innerHTML = h;
+  if(A?.dance) bindPrecise(A);
   if(A){$('#dance-import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;const pose=cleanDance(JSON.parse(await f.text()));if(!pose)throw Error('지원하지 않는 DANCE 포즈');if(!state.actors.includes(A))return;setPlaying(false);const t=snapT(time);if(!A.dance){A.dance=pose;A.danceKeys=[];}if(!A.danceKeys?.length&&t>EPS)A.danceKeys=[{t:0,pose:A.dance}];A.danceKeys=(A.danceKeys||[]).filter(k=>Math.abs(k.t-t)>=EPS);A.danceKeys.push({t,pose});A.danceKeys.sort((a,b)=>a.t-b.t);actorKeyAt(A,t,true);commit();mark('struct','panel','tl');toast(tc(t)+' 정밀 포즈 키 등록 완료');}catch(err){toast(err.message);}};$('#dance-demo').onclick=()=>{if(A.danceKeys?.length&&!confirm('기존 정밀 포즈 키를 예제로 교체할까요?'))return;applyDanceDemo(A);};$('#dance-clear').onclick=()=>{delete A.dance;delete A.danceKeys;commit();mark('struct','panel');};}
 }
 
@@ -2170,6 +2234,7 @@ function syncUI() {
       if (el && document.activeElement !== el) el.value = Math.log2(A.size[k]);
       if (o) o.textContent = sizeText(k, A.size[k]);
     }
+    syncPrecise(A);
     has = !!actorKeyAt(A, time, false); count = A.keys.length;
   } else if (sel === 'cam') { has = !!camKeyAt(time, false); count = state.camera.keys.length; }
   const B = selBox();
