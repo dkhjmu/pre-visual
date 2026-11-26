@@ -1,4 +1,4 @@
-# HEXA Studio — 통합 제작 환경 설계 v0.3
+# HEXA Studio — 통합 제작 환경 설계 v0.4
 
 작성일: 2026-11-26  
 상태: 브라우저 기반 Studio v0.1 초기 구현. 실제 Chrome/ComfyUI 검증 전.
@@ -179,3 +179,39 @@ hexa-studio.html을 기존 저장소에 추가한다. React/FastAPI 전환 전�
 
 다음 단계: Chrome 실사용 테스트, 에셋 복수 선택 및 썸네일/태그, 기존 편집기 데이터 브리지, 이후 Core API 및 작업 큐. 기존 HTML 자체는 이번 작업에서 변경하지 않는다.
 
+
+## 13. Pipeline-first v0.2 (현재 구현)
+
+이 절은 앞 절의 초기 프로토타입 구조보다 우선한다. 핵심 에셋은 캐릭터(원화 + DANCE 체형 JSON)와 장소(원화 + PREVIS 무대 JSON) 두 종류로 단순화한다. 건축 모델링은 범위에서 제외한다. 소품, 액션, 카메라, 조명은 PREVIS 설정 및 프리셋, 스타일은 프롬프트, 워크플로는 실행 설정으로 취급한다.
+
+```text
+project.json                 # schemaVersion 2, cuts: ID 배열
+characters/<id>/asset.json  # 원화, JSON, MD 등 원본 파일 목록
+locations/<id>/asset.json
+cuts/<cid>/cut.json          # frames, characters, location, keyframes
+cuts/<cid>/previs.json
+cuts/<cid>/direction.md
+cuts/<cid>/motion_prompt.md
+cuts/<cid>/keyframes/<kid>/keyframe.json # frame: 0-based
+cuts/<cid>/keyframes/<kid>/previs.png
+cuts/<cid>/keyframes/<kid>/prompt.md
+output/<cid>/keyframes/<kid>/candidate_*.png
+output/<cid>/keyframes/<kid>/result.json
+output/<cid>/videos/candidate_*.mp4
+output/<cid>/videos/result.json
+output/<cid>/plan.json
+```
+
+경로는 프로젝트 루트 기준 상대경로. result.json의 approved는 같은 폴더 내 후보 파일명, state=running 및 error는 선택적인 실행 상태 필드. 파일 존재를 확인하여 진척을 계산한다. 입력 변경에 따른 확정 결과의 stale 판정은 향후 구현한다. v1 프로젝트는 자동 덮어쓰기/마이그레이션하지 않는다. 신규 폴더로 테스트한다.
+
+Studio v0.2: PRODUCTION 실제 파일 기반 현황판, 필터, 컷 상세, 이미지 확대, 영상 재생, 승인; DIRECTOR 컷 길이/캐스팅/장소/프롬프트/키프레임; ASSETS 캐릭터/장소 등록. 기존 편집기와는 수동 내보내기/가져오기. 편집기 탭은 확정 영상 조회까지만 제공한다.
+
+Python 3.10+ 표준 라이브러리 CLI:
+
+```bash
+python hexa.py validate --project PATH
+python hexa.py status --project PATH
+python hexa.py plan --project PATH
+```
+
+선택적으로 --cut ID. plan은 검증을 통과한 컷의 프롬프트 조합과 입력 SHA256을 output/<cid>/plan.json에 저장하며 생성 요청을 보내지 않는다. 실제 ComfyUI 노드 매핑/업로드/작업 큐/결과 수집 및 오류 복구는 다음 단계다. 여러 키프레임 중 실제 영상 모델이 지원하는 입력만 전달하고 나머지는 검수 레퍼런스로 사용한다. 컷의 기본값은 96프레임(4초), 생성 모델 capability는 별도 검증한다. 브라우저와 Python이 같은 파일을 동시에 수정하지 않도록 현재는 사용자 작업 순서를 분리한다. 실제 브라우저 및 GPU 통합 테스트 미수행.
