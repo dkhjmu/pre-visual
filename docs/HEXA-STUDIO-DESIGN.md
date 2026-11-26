@@ -1,0 +1,151 @@
+# HEXA Studio — 통합 제작 환경 설계 v0.1
+
+작성일: 2026-11-26  
+상태: 설계 초안. 구현 및 로컬 환경 검증 전.
+
+## 1. 목표 및 결정 사항
+
+개인용 AI 애니메이션/MV 제작 환경을 웹 기반으로 구축한다. 기존 PREVIS, DANCE, EXPRESSION의 검증된 기능을 보존하고 단계적으로 통합한다. DANCE는 안무 전용이 아니라 CHARACTER로 확장한다.
+
+- DB, Redis, 메시지 브로커 없이 프로젝트별 파일 시스템을 영속 저장소로 사용한다.
+- 프로젝트마다 독립 Git 저장소를 사용할 수 있도록 한다. 프로그램 소스와 제작 데이터는 분리한다.
+- 브라우저는 UI, HEXA Core는 실행 및 오케스트레이션 주체다.
+- Windows RTX 5080 16GB에서 로컬 ComfyUI를 활용한다. GPU 생성은 기본 순차 실행한다.
+- 초기에는 기존 HTML을 iframe으로 통합하고 postMessage 계약을 정의한다. 검증 후 점진적으로 모듈화한다.
+- 최종 목표는 캐릭터 제작 → 캐스팅 → 연출 → 이미지 → 영상 → 편집의 연결이다.
+
+## 2. 모듈
+
+| 모듈 | 책임 |
+|---|---|
+| PROJECT | 생성, 열기, 저장, 프로젝트 복제, Git 상태 |
+| CHARACTER | 원화, 체형, 포즈, 손동작, 표정, 의상, 동작 라이브러리 |
+| PREVIS | 캐스팅, 공간, 소품, 카메라, 연기, 타임라인, 콘티 PNG/JSON |
+| IMAGE | 프롬프트 조합, ComfyUI 후보 생성, 검수, 키이미지 확정 |
+| MOTION | H3 등 영상 워크플로, 클립 후보, 재생성, 검수 |
+| EDITOR | 음원/가사/파트 싱크, 컷 편집, FFmpeg 출력 |
+
+CHARACTER의 캐릭터 에셋은 PREVIS에서 참조한다. 확정 컷은 당시 캐릭터 버전과 입력 스냅샷을 보존하여 이후 체형 수정으로 기존 컷이 변하지 않게 한다.
+
+## 3. 아키텍처
+
+```text
+Browser (React / TypeScript / Vite / Three.js)
+  PROJECT | CHARACTER | PREVIS | IMAGE | MOTION | EDITOR
+                     REST / WebSocket
+HEXA Core (Python / FastAPI, 단일 로컬 프로세스)
+  Project Manager | Asset Manager | Workflow Engine
+  Job Scheduler | Process Manager | Event Manager
+  Git Adapter | ComfyUI Adapter | FFmpeg Adapter
+       |              |              | 
+  Project Files      Git         ComfyUI / FFmpeg
+```
+
+Core는 파일 저장, 실행 요청, 작업 큐, 결과 수집, 진행 이벤트, 재시작 복구를 담당한다. 브라우저 종료와 작업 수명은 독립적이다. 단, PREVIS의 WebGL PNG 추출은 브라우저에서 수행하고 입력 PNG/JSON 저장을 완료한 뒤 서버 작업을 등록한다. 서버 자체의 PREVIS 렌더링은 별도 후속 과제다.
+
+운영 시 FastAPI가 빌드된 프런트엔드를 서빙한다. start.bat으로 Core 시작, ComfyUI 연결 확인, 작업 복구, 브라우저 열기를 수행한다. 기본 localhost 바인딩. LAN/외부 접근은 인증 및 VPN 등 별도 보안 설계 후 허용한다.
+
+## 4. 파일 기반 프로젝트
+
+```text
+HEXA/
+  studio/                 # 프로그램 저장소
+  workflows/              # 공통 워크플로 템플릿
+  library/                # 공유 캐릭터/포즈/표정/소품
+  projects/
+    aesther-school/
+      .git/
+      project.json
+      characters/
+        karin/
+          character.json
+          body.json
+          reference/
+      audio/
+        master.mp3
+        lyrics.json
+      scenes/
+        S001/
+          scene.json
+          previs.json
+          storyboard/
+          prompts/
+          images/
+            candidates/
+            approved/
+          videos/
+            candidates/
+            approved/
+      workflows/          # 사용한 워크플로 스냅샷
+      timeline.json
+      jobs/
+      exports/
+      backups/
+```
+
+project.json에는 schemaVersion, projectId, 이름, 해상도, FPS, 장면 ID 목록 등을 둔다. 장면 및 에셋은 안정적인 ID와 프로젝트 상대경로로 참조한다. 공유 라이브러리에서 가져온 에셋은 프로젝트에 복사하거나 버전 고정하여 프로젝트 이동 시 재현성을 유지한다. 확정 결과는 생성 입력, 워크플로 버전, 모델 식별자, 시드, 결과 경로를 기록한다.
+
+파일 저장은 임시 파일 후 동일 파일 시스템 내 원자적 교체를 사용한다. JSON은 안정적인 포맷과 키 순서를 유지한다. 파일 잠금 및 revision 검사로 다중 탭의 덮어쓰기를 방지한다. 여러 파일 변경은 단일 원자적 트랜잭션이 아니므로 실패 복구 절차를 둔다. 스키마 변경은 마이그레이션과 백업을 제공한다. 경로 검증으로 프로젝트 외부 파일 접근을 차단한다.
+
+## 5. Git 정책
+
+- JSON, 프롬프트, 타임라인, 워크플로는 일반 Git.
+- 원화 및 확정 이미지/영상/음원은 필요 시 Git LFS. 원격 용량/전송량 및 저작권 고려.
+- 생성 후보, 캐시, 임시 파일, 실행 중 작업 로그는 기본 gitignore. 필요한 후보는 별도 백업 가능.
+- 자동 저장은 파일 저장만 수행한다. 의미 있는 제작 단위에서 사용자가 커밋/푸시한다.
+- Git UI는 status, diff, commit, history, push를 단계적으로 지원한다. 파괴적 복원은 명시적 확인 필요.
+- 후보는 덮어쓰지 않는다. 확정 파일과 메타데이터는 함께 관리한다.
+
+## 6. 실행 모델
+
+예: 이미지 후보 4장 생성
+1. 브라우저에서 PREVIS PNG/JSON을 내보내고 Core에 저장.
+2. Core가 캐릭터 원화, 프롬프트, 워크플로 입력을 스냅샷으로 고정.
+3. 작업별 JSON을 jobs/에 기록하고 GPU 큐 등록.
+4. ComfyUI에 순차 요청, 진행 상황을 WebSocket으로 전달.
+5. 결과를 고유 파일명으로 저장하고 후보 메타데이터 등록.
+6. 사용자 검수 및 확정 후 MOTION 입력으로 전달.
+
+작업 상태: queued → running → succeeded / failed / cancelled. 외부 prompt ID, 입력 스냅샷, 시도 횟수, 오류, 결과 경로를 저장한다. 재시작 시 ComfyUI 상태/이력을 확인하고 중복 제출을 피한다. 확인 불가능한 작업은 자동 성공 처리하지 않는다. 취소 및 재시도는 어댑터 지원 범위에 맞춘다.
+
+워크플로 정의 예시 (향후 확장용, 실행 가능한 현재 API 아님):
+
+```json
+{
+  "name": "키이미지 후보 생성",
+  "steps": [
+    {"action": "previs.export"},
+    {"action": "prompt.compose"},
+    {"action": "comfyui.generate", "count": 4},
+    {"action": "asset.register"},
+    {"action": "review.wait"}
+  ]
+}
+```
+
+초기에는 Python 함수 기반 실행기로 충분하다. 범용 JSON 엔진은 필요할 때 확장한다. 사용자 검수는 서버 작업을 장시간 점유하지 않는 별도 상태로 관리한다.
+
+## 7. ComfyUI 연동
+
+예상 API: /system_stats, /object_info, /upload/image, /prompt, /ws, /history/{id}, /view. 실제 설치 버전에서 검증한다. API 형식 워크플로 템플릿에 프롬프트, 참조 이미지, 시드, 해상도 등을 주입한다. 모델/노드/입력 호환성은 제출 전 검사한다. H3 전용 로직을 Core에 고정하지 않고 모델별 어댑터를 둔다. RTX 5080에서 VRAM, 생성 시간, 실패 복구를 실제 측정한다.
+
+## 8. 구현 로드맵
+
+1. 통합 웹 셸, Core, 프로젝트 생성/열기/저장, 기존 HTML 실행. DB 없음.
+2. CHARACTER 에셋 스키마, DANCE/EXPRESSION 통합, 원화 및 체형 저장.
+3. PREVIS 캐스팅, 장면 관리, PNG/JSON 자동 저장, 기존 체형 필드 호환 검증.
+4. IMAGE: ComfyUI 연결, 후보 2장 MVP, 검수 및 확정.
+5. MOTION: H3 클립 생성, 큐, 재생성, 복구.
+6. EDITOR: 음원 싱크, 컷 편집, FFmpeg 최종 출력.
+
+Phase 1 완료 기준: start.bat으로 실행, 프로젝트 폴더 생성 및 재열기, 기존 도구 실행, JSON 왕복 저장, 재시작 후 데이터 유지, Git으로 프로젝트 변경 확인. 기존 HTML의 동작 회귀가 없어야 한다.
+
+## 9. 미결 사항
+
+- 신규 hexa-studio 저장소 분리 시점과 기존 HTML 동기화 방식.
+- CHARACTER/PREVIS 공통 스키마 및 좌표계, 체형 필드 호환성.
+- 실제 ComfyUI/H3 워크플로 및 GPU 성능.
+- Git LFS 원격 저장소 정책, 후보 파일 백업 정책.
+- 편집 타임라인 포맷과 외부 편집기 연동 범위.
+
+이번 커밋은 설계 기록만 추가한다. 기존 도구 수정, Studio 구현, 실행 검증은 수행하지 않는다.
