@@ -208,7 +208,7 @@ $('jessiePose').onclick=()=>{
 };
 // Rig faces local -Z. Negative hip X lifts the thigh forward; positive knee X bends backward.
 const examplePoses={
- sit:{Hips:[0,0,0],LeftUpperLeg:[-90,0,5],RightUpperLeg:[-90,0,-5],LeftLowerLeg:[90,0,0],RightLowerLeg:[90,0,0],LeftUpperArm:[-25,0,8],RightUpperArm:[-25,0,-8],LeftForearm:[-35,0,0],RightForearm:[-35,0,0]},
+ sit:{},
  cross:{Hips:[0,0,0],LeftUpperLeg:[-90,0,4],RightUpperLeg:[-105,0,25],LeftLowerLeg:[90,0,0],RightLowerLeg:[105,0,-15],LeftUpperArm:[-20,0,8],RightUpperArm:[-20,0,-8],LeftForearm:[-45,0,0],RightForearm:[-45,0,0]},
  cute:{Head:[0,0,12],LeftUpperArm:[-35,0,40],RightUpperArm:[-35,0,-40],LeftForearm:[-125,0,-35],RightForearm:[-125,0,35],LeftHand:[0,0,-10],RightHand:[0,0,10],LeftUpperLeg:[-5,0,4],RightUpperLeg:[-12,0,-4],RightLowerLeg:[18,0,0]},
  peace:{Head:[0,-10,-10],RightUpperArm:[-35,0,-60],RightForearm:[-115,0,35],LeftUpperArm:[0,0,25],LeftForearm:[-65,0,-20],RightUpperLeg:[-10,0,-8],RightLowerLeg:[15,0,0]},
@@ -224,8 +224,9 @@ $('applyExample').onclick=()=>{
  root.position.set(0,0,0);root.quaternion.identity();
  for(const [name,xyz] of Object.entries(pose))bones.get(name).group.rotation.set(...xyz.map(THREE.MathUtils.degToRad),'XYZ');
  if(id==='sit'){
- const corrected={Neck:[0,.9998883744129027,0,.014941175118554717],LeftHand:[0,.4061574765733512,0,.9138030992634943],RightHand:[-.042073768220584326,-.9012666679788919,.08991265183934619,.42173914480062524],RightThumb1:[0,0,.25881904510252074,.9659258262890683],LeftFoot:[0,-.9957156368106845,0,.09246821405592802],RightFoot:[0,.9992955828470476,0,.03752783103750447]};
- for(const [name,q] of Object.entries(corrected))bones.get(name).group.quaternion.fromArray(q).normalize();
+ // User-verified sitting pose: all other joints remain identity after reset.
+ const seated={"LeftUpperArm":[0.40512007954543605,0,0,0.914263485626053],"LeftForearm":[0,0,-0.2967162388257403,0.9549656923770122],"LeftHand":[0,-0.7049009057208766,0,0.7093057966165849],"LeftUpperLeg":[0.7139441232366991,-0.01895867293730297,0.019345215712818508,0.6996785835262231],"LeftLowerLeg":[-0.6923109658381227,0,0,0.7215992839383129],"RightUpperArm":[0.39529358655761976,0,0,0.9185548325638561],"RightForearm":[0,0,0.27347507319007414,0.9618790902934131],"RightHand":[0,0.782176767139299,0,0.623056582460626],"RightUpperLeg":[0.69489719291172,0,0,0.7191090955365617],"RightLowerLeg":[-0.6825581637989984,0,0,0.7308312753511168]};
+ for(const [name,q] of Object.entries(seated))bones.get(name).group.quaternion.fromArray(q).normalize();
  }
  if(id==='peace')for(const f of fingerNames)fingerCurl('Right',f,gesturePatterns.peace[f]);
  root.updateMatrixWorld(true);
